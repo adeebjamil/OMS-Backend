@@ -332,16 +332,35 @@ exports.downloadDocument = async (req, res, next) => {
       }
     }
 
-    // Redirect to Cloudinary URL with attachment flag for download
-    const urlParts = document.fileUrl.split('/upload/');
-    let downloadUrl = document.fileUrl;
-    
-    if (urlParts.length === 2) {
-      // Add fl_attachment to force download instead of display
-      downloadUrl = `${urlParts[0]}/upload/fl_attachment/${urlParts[1]}`;
-    }
+    // Generate a signed URL with 1 hour expiration for secure download
+    try {
+      // Extract public_id from the Cloudinary URL
+      const urlParts = document.fileUrl.split('/upload/');
+      let publicId = '';
+      
+      if (urlParts.length === 2) {
+        // Get everything after '/upload/' and remove version number if present
+        const pathAfterUpload = urlParts[1];
+        publicId = pathAfterUpload.replace(/^v\d+\//, ''); // Remove version like 'v1762508138/'
+      }
 
-    res.redirect(downloadUrl);
+      // Generate signed URL with attachment flag for download
+      const signedUrl = cloudinary.url(publicId, {
+        resource_type: 'raw',
+        type: 'upload',
+        sign_url: true,
+        secure: true,
+        flags: 'attachment',
+        expires_at: Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
+      });
+
+      console.log('📥 Generated signed download URL for:', document.fileName);
+      res.redirect(signedUrl);
+    } catch (cloudinaryError) {
+      console.error('❌ Cloudinary URL generation error:', cloudinaryError);
+      // Fallback to direct URL
+      res.redirect(document.fileUrl);
+    }
   } catch (error) {
     console.error('❌ Download error:', error);
     next(error);
