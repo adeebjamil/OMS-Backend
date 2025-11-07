@@ -344,22 +344,42 @@ exports.downloadDocument = async (req, res, next) => {
         publicId = pathAfterUpload.replace(/^v\d+\//, ''); // Remove version like 'v1762508138/'
       }
 
-      // Generate signed URL with attachment flag for download
-      const signedUrl = cloudinary.url(publicId, {
-        resource_type: 'raw',
-        type: 'upload',
-        sign_url: true,
-        secure: true,
-        flags: 'attachment',
-        expires_at: Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
-      });
+      console.log('📥 Generating download URL for public_id:', publicId);
 
-      console.log('📥 Generated signed download URL for:', document.fileName);
-      res.redirect(signedUrl);
+      // For raw files (non-images), use a simple signed URL without transformations
+      const timestamp = Math.floor(Date.now() / 1000);
+      const crypto = require('crypto');
+      
+      // Create the string to sign
+      const stringToSign = `timestamp=${timestamp}${process.env.CLOUDINARY_API_SECRET}`;
+      const signature = crypto
+        .createHash('sha256')
+        .update(stringToSign)
+        .digest('hex');
+
+      // Build the authenticated URL
+      const downloadUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/raw/upload/fl_attachment/${publicId}?timestamp=${timestamp}&signature=${signature}&api_key=${process.env.CLOUDINARY_API_KEY}`;
+
+      console.log('✅ Generated authenticated download URL');
+      res.redirect(downloadUrl);
     } catch (cloudinaryError) {
-      console.error('❌ Cloudinary URL generation error:', cloudinaryError);
-      // Fallback to direct URL
-      res.redirect(document.fileUrl);
+      console.error('❌ URL generation error:', cloudinaryError);
+      // Fallback: Stream the file through our server
+      try {
+        const axios = require('axios');
+        const response = await axios.get(document.fileUrl, { responseType: 'stream' });
+        
+        res.setHeader('Content-Type', document.fileType);
+        res.setHeader('Content-Disposition', `attachment; filename="${document.fileName}"`);
+        
+        response.data.pipe(res);
+      } catch (streamError) {
+        console.error('❌ Stream error:', streamError);
+        return res.status(500).json({
+          success: false,
+          message: 'Error downloading file'
+        });
+      }
     }
   } catch (error) {
     console.error('❌ Download error:', error);
