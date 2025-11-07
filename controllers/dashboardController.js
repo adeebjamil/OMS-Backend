@@ -168,6 +168,22 @@ exports.getInternDashboard = async (req, res, next) => {
 
     // Work log statistics
     const totalWorkLogs = await WorkLog.countDocuments({ userId });
+    
+    // Calculate total hours
+    const hoursAggregation = await WorkLog.aggregate([
+      {
+        $match: { 
+          userId: req.user._id
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalHours: { $sum: '$hoursWorked' }
+        }
+      }
+    ]);
+    
     const avgRating = await WorkLog.aggregate([
       {
         $match: { 
@@ -213,6 +229,9 @@ exports.getInternDashboard = async (req, res, next) => {
         },
         workLogs: {
           total: totalWorkLogs,
+          totalHours: hoursAggregation.length > 0 
+            ? hoursAggregation[0].totalHours 
+            : 0,
           averageRating: avgRating.length > 0 
             ? avgRating[0].avgRating.toFixed(2)
             : null
