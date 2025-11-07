@@ -332,54 +332,31 @@ exports.downloadDocument = async (req, res, next) => {
       }
     }
 
-    // Generate a signed URL with 1 hour expiration for secure download
+    // Stream the file through our server to avoid Cloudinary auth issues
     try {
-      // Extract public_id from the Cloudinary URL
-      const urlParts = document.fileUrl.split('/upload/');
-      let publicId = '';
+      console.log('📥 Downloading file:', document.fileName);
+      console.log('📥 From URL:', document.fileUrl);
       
-      if (urlParts.length === 2) {
-        // Get everything after '/upload/' and remove version number if present
-        const pathAfterUpload = urlParts[1];
-        publicId = pathAfterUpload.replace(/^v\d+\//, ''); // Remove version like 'v1762508138/'
-      }
-
-      console.log('📥 Generating download URL for public_id:', publicId);
-
-      // For raw files (non-images), use a simple signed URL without transformations
-      const timestamp = Math.floor(Date.now() / 1000);
-      const crypto = require('crypto');
+      const axios = require('axios');
+      const response = await axios.get(document.fileUrl, { 
+        responseType: 'stream',
+        timeout: 30000 // 30 second timeout
+      });
       
-      // Create the string to sign
-      const stringToSign = `timestamp=${timestamp}${process.env.CLOUDINARY_API_SECRET}`;
-      const signature = crypto
-        .createHash('sha256')
-        .update(stringToSign)
-        .digest('hex');
-
-      // Build the authenticated URL
-      const downloadUrl = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/raw/upload/fl_attachment/${publicId}?timestamp=${timestamp}&signature=${signature}&api_key=${process.env.CLOUDINARY_API_KEY}`;
-
-      console.log('✅ Generated authenticated download URL');
-      res.redirect(downloadUrl);
-    } catch (cloudinaryError) {
-      console.error('❌ URL generation error:', cloudinaryError);
-      // Fallback: Stream the file through our server
-      try {
-        const axios = require('axios');
-        const response = await axios.get(document.fileUrl, { responseType: 'stream' });
-        
-        res.setHeader('Content-Type', document.fileType);
-        res.setHeader('Content-Disposition', `attachment; filename="${document.fileName}"`);
-        
-        response.data.pipe(res);
-      } catch (streamError) {
-        console.error('❌ Stream error:', streamError);
-        return res.status(500).json({
-          success: false,
-          message: 'Error downloading file'
-        });
-      }
+      // Set headers for download
+      res.setHeader('Content-Type', document.fileType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(document.fileName)}"`);
+      
+      // Pipe the Cloudinary stream to response
+      response.data.pipe(res);
+      
+      console.log('✅ File download started');
+    } catch (error) {
+      console.error('❌ Download error:', error.message);
+      return res.status(500).json({
+        success: false,
+        message: 'Error downloading file. Please try again.'
+      });
     }
   } catch (error) {
     console.error('❌ Download error:', error);
