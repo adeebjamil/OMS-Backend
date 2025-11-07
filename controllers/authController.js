@@ -43,9 +43,12 @@ exports.register = async (req, res, next) => {
 exports.login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
+    
+    console.log('🔐 Login attempt:', { email, password: password ? '***' : 'MISSING' });
 
     // Validate email & password
     if (!email || !password) {
+      console.log('❌ Missing email or password');
       return res.status(400).json({
         success: false,
         message: 'Please provide an email and password'
@@ -54,26 +57,55 @@ exports.login = async (req, res, next) => {
 
     // Check for user
     const user = await User.findOne({ email }).select('+password');
+    
+    console.log('👤 User found:', user ? `Yes (${user.email}, Status: ${user.status})` : 'No');
 
     if (!user) {
+      console.log('❌ User not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
+      });
+    }
+    
+    // Check if user status is active
+    if (user.status !== 'active') {
+      console.log('❌ User status is:', user.status);
+      return res.status(401).json({
+        success: false,
+        message: 'Your account is inactive. Please contact administrator.'
       });
     }
 
     // Check if password matches
-    const isMatch = await user.comparePassword(password);
+    console.log('🔑 Checking password...');
+    console.log('Entered password length:', password.length);
+    console.log('Stored password hash:', user.password ? user.password.substring(0, 30) + '...' : 'NO HASH');
+    
+    let isMatch = false;
+    try {
+      isMatch = await user.comparePassword(password);
+      console.log('🔑 Password match:', isMatch ? 'YES ✅' : 'NO ❌');
+    } catch (compareError) {
+      console.error('❌ Password comparison error:', compareError.message);
+      return res.status(500).json({
+        success: false,
+        message: 'Error verifying password'
+      });
+    }
 
     if (!isMatch) {
+      console.log('❌ Password incorrect');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
 
+    console.log('✅ Login successful for:', user.email);
     sendTokenResponse(user, 200, res);
   } catch (error) {
+    console.error('❌ Login error:', error.message);
     next(error);
   }
 };
