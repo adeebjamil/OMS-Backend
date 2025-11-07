@@ -7,6 +7,7 @@ const errorHandler = require('./middleware/error');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
+const passwordResetRoutes = require('./routes/passwordResetRoutes');
 const userRoutes = require('./routes/userRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const taskRoutes = require('./routes/taskRoutes');
@@ -35,6 +36,7 @@ app.use(cookieParser());
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/password-reset', passwordResetRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/tasks', taskRoutes);

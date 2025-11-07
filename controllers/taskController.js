@@ -1,4 +1,5 @@
 const Task = require('../models/Task');
+const { createNotification } = require('./notificationController');
 
 // @desc    Get all tasks
 // @route   GET /api/tasks
@@ -67,6 +68,29 @@ exports.createTask = async (req, res, next) => {
     req.body.assignedBy = req.user.id;
 
     const task = await Task.create(req.body);
+    
+    // Populate to get full data for notification
+    await task.populate('assignedTo', 'name email');
+
+    // Create notification for assigned user
+    if (task.assignedTo && task.assignedTo._id) {
+      try {
+        await createNotification({
+          userId: task.assignedTo._id,
+          type: 'task_assigned',
+          title: 'New Task Assigned',
+          message: `You have been assigned a new task: "${task.title}"`,
+          relatedId: task._id,
+          relatedModel: 'Task',
+          link: `/dashboard/tasks`,
+          priority: task.priority === 'urgent' ? 'urgent' : task.priority === 'high' ? 'high' : 'normal',
+          createdBy: req.user.id
+        });
+        console.log('✅ Task assignment notification created');
+      } catch (notifError) {
+        console.error('❌ Error creating task notification:', notifError);
+      }
+    }
 
     res.status(201).json({
       success: true,
@@ -99,10 +123,32 @@ exports.updateTask = async (req, res, next) => {
       });
     }
 
+    const oldStatus = task.status;
+    
     task = await Task.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true
-    });
+    }).populate('assignedTo', 'name email').populate('assignedBy', 'name email');
+
+    // Create notification if task status changed to completed
+    if (oldStatus !== 'completed' && task.status === 'completed' && task.assignedBy) {
+      try {
+        await createNotification({
+          userId: task.assignedBy._id,
+          type: 'task_completed',
+          title: 'Task Completed',
+          message: `${task.assignedTo.name} has completed the task: "${task.title}"`,
+          relatedId: task._id,
+          relatedModel: 'Task',
+          link: `/dashboard/tasks`,
+          priority: 'normal',
+          createdBy: req.user.id
+        });
+        console.log('✅ Task completion notification created');
+      } catch (notifError) {
+        console.error('❌ Error creating task completion notification:', notifError);
+      }
+    }
 
     res.status(200).json({
       success: true,

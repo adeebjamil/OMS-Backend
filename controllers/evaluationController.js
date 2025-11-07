@@ -1,4 +1,5 @@
 const Evaluation = require('../models/Evaluation');
+const { createNotification } = require('./notificationController');
 
 // @desc    Get all evaluations
 // @route   GET /api/evaluations
@@ -67,6 +68,29 @@ exports.createEvaluation = async (req, res, next) => {
     req.body.evaluatedBy = req.user.id;
 
     const evaluation = await Evaluation.create(req.body);
+    
+    // Populate to get intern details
+    await evaluation.populate('internId', 'name email');
+
+    // Create notification for the intern (only if published)
+    if (evaluation.isPublished && evaluation.internId && evaluation.internId._id) {
+      try {
+        await createNotification({
+          userId: evaluation.internId._id,
+          type: 'evaluation_created',
+          title: 'New Evaluation Available',
+          message: `You have received a new ${evaluation.evaluationType} evaluation`,
+          relatedId: evaluation._id,
+          relatedModel: 'Evaluation',
+          link: `/dashboard/evaluations`,
+          priority: 'normal',
+          createdBy: req.user.id
+        });
+        console.log('✅ Evaluation notification created');
+      } catch (notifError) {
+        console.error('❌ Error creating evaluation notification:', notifError);
+      }
+    }
 
     res.status(201).json({
       success: true,

@@ -1,5 +1,8 @@
 const Document = require('../models/Document');
 const { cloudinary } = require('../config/cloudinary');
+const { sendWhatsAppDocument } = require('../config/whatsapp');
+const { createBulkNotifications } = require('./notificationController');
+const User = require('../models/User');
 
 // @desc    Get all documents
 // @route   GET /api/documents
@@ -86,6 +89,15 @@ exports.uploadDocument = async (req, res, next) => {
       });
     }
 
+    // Check if file has content
+    if (!req.file.size || req.file.size === 0) {
+      console.log('❌ Empty file uploaded');
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot upload empty file. Please select a valid file.'
+      });
+    }
+
     console.log('📤 File details:', {
       originalname: req.file.originalname,
       mimetype: req.file.mimetype,
@@ -138,6 +150,44 @@ exports.uploadDocument = async (req, res, next) => {
     const document = await Document.create(documentData);
 
     console.log('✅ Document created successfully:', document._id);
+
+    // Create notifications for users
+    try {
+      let usersToNotify = [];
+      
+      if (documentData.isPublic) {
+        // If public, notify all interns
+        const interns = await User.find({ role: 'intern' }).select('_id');
+        usersToNotify = interns.map(intern => intern._id.toString());
+        console.log(`📢 Public document - notifying ${usersToNotify.length} interns`);
+      } else if (documentData.sharedWith && documentData.sharedWith.length > 0) {
+        // If shared with specific users
+        usersToNotify = documentData.sharedWith.map(share => 
+          typeof share.userId === 'string' ? share.userId : share.userId.toString()
+        );
+        console.log(`📢 Shared document - notifying ${usersToNotify.length} specific users`);
+      }
+
+      if (usersToNotify.length > 0) {
+        const notifications = usersToNotify.map(userId => ({
+          userId: userId,
+          type: 'document_shared',
+          title: 'New Document Available',
+          message: `A new document "${documentData.title}" has been uploaded`,
+          relatedId: document._id,
+          relatedModel: 'Document',
+          link: `/dashboard/documents`,
+          priority: 'normal',
+          createdBy: req.user.id
+        }));
+
+        await createBulkNotifications(notifications);
+        console.log(`✅ Created ${notifications.length} notifications`);
+      }
+    } catch (notifError) {
+      console.error('❌ Error creating notifications:', notifError);
+      // Don't fail the upload if notifications fail
+    }
 
     res.status(201).json({
       success: true,
@@ -297,3 +347,94 @@ exports.downloadDocument = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Send document to WhatsApp
+// @route   POST /api/documents/:id/send-whatsapp
+// @access  Private (Admin and Intern)
+exports.sendToWhatsApp = async (req, res, next) => {
+  try {
+    const { phone, message } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number is required'
+      });
+    }
+
+    // Validate phone number format
+    const phoneRegex = /^[1-9]\d{9,14}$/;
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number. Use format: country code + number (e.g., 919876543210)'
+      });
+    }
+
+    const document = await Document.findById(req.params.id)
+      .populate('uploadedBy', 'name email');
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found'
+      });
+    }
+
+    // Check if user has access
+    if (req.user.role !== 'admin' && !document.isPublic) {
+      const hasAccess = document.sharedWith.some(
+        share => share.userId.toString() === req.user.id
+      );
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have access to this document'
+        });
+      }
+    }
+
+    // Prepare caption
+    const caption = message || `📄 ${document.title}\n\n${document.description || 'Document shared from Office Hub'}\n\nCategory: ${document.category}\nShared by: ${req.user.name}`;
+
+    console.log(`📱 Sending document to WhatsApp: ${phone}`);
+    console.log(`📄 Document: ${document.title}`);
+    console.log(`🔗 URL: ${document.fileUrl}`);
+
+    // Send document via WhatsApp
+    const whatsappResult = await sendWhatsAppDocument(
+      phone,
+      document.fileUrl,
+      document.fileName,
+      caption
+    );
+
+    if (!whatsappResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send document via WhatsApp',
+        error: whatsappResult.error
+      });
+    }
+
+    console.log(`✅ Document sent successfully to ${phone}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Document sent to WhatsApp successfully',
+      data: {
+        document: {
+          id: document._id,
+          title: document.title,
+          fileName: document.fileName
+        },
+        recipient: phone.replace(/.(?=.{4})/g, '*'), // Mask phone
+        whatsappMessageId: whatsappResult.data?.messages?.[0]?.id
+      }
+    });
+  } catch (error) {
+    console.error('❌ WhatsApp send error:', error);
+    next(error);
+  }
+};
+

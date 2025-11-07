@@ -95,6 +95,16 @@ const userSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Clean phone number format before saving
+userSchema.pre('save', function(next) {
+  // Remove +, spaces, hyphens, parentheses from phone number
+  if (this.phone && this.isModified('phone')) {
+    this.phone = this.phone.replace(/[\+\s\-\(\)]/g, '');
+    console.log(`📱 Cleaned phone number for ${this.email}: ${this.phone}`);
+  }
+  next();
+});
+
 // Generate unique Intern ID before saving
 userSchema.pre('save', async function(next) {
   // Generate internId only for new intern users

@@ -6,7 +6,8 @@ const {
   updateDocument,
   deleteDocument,
   incrementDownload,
-  downloadDocument
+  downloadDocument,
+  sendToWhatsApp
 } = require('../controllers/documentController');
 const { protect, authorize } = require('../middleware/auth');
 const { upload } = require('../config/cloudinary');
@@ -17,6 +18,7 @@ router.use(protect); // All routes require authentication
 
 router.put('/:id/download', incrementDownload);
 router.get('/:id/file', downloadDocument);  // Must be before /:id route
+router.post('/:id/send-whatsapp', sendToWhatsApp);  // Send document to WhatsApp
 
 // Multer error handler middleware
 const handleMulterError = (err, req, res, next) => {
