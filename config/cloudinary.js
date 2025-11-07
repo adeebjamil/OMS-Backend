@@ -16,6 +16,7 @@ const storage = new CloudinaryStorage({
     folder: 'office-documents',
     allowed_formats: ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'],
     resource_type: 'auto',
+    access_mode: 'public', // Make files publicly accessible
     public_id: (req, file) => {
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
       return file.originalname.split('.')[0] + '-' + uniqueSuffix;
