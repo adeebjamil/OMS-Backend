@@ -332,31 +332,61 @@ exports.downloadDocument = async (req, res, next) => {
       }
     }
 
-    // Stream the file through our server to avoid Cloudinary auth issues
+    // Stream the file through our server
     try {
-      console.log('📥 Downloading file:', document.fileName);
-      console.log('📥 From URL:', document.fileUrl);
+      console.log('📥 Download Request:');
+      console.log('  - File:', document.fileName);
+      console.log('  - URL:', document.fileUrl);
+      console.log('  - Type:', document.fileType);
+      console.log('  - Size:', document.fileSize);
       
       const axios = require('axios');
+      
+      // Fetch file from Cloudinary
       const response = await axios.get(document.fileUrl, { 
         responseType: 'stream',
-        timeout: 30000 // 30 second timeout
+        timeout: 30000,
+        maxRedirects: 5
       });
       
+      console.log('✅ Cloudinary response received');
+      console.log('  - Status:', response.status);
+      console.log('  - Content-Type:', response.headers['content-type']);
+      
       // Set headers for download
-      res.setHeader('Content-Type', document.fileType || 'application/octet-stream');
+      res.setHeader('Content-Type', document.fileType || response.headers['content-type'] || 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(document.fileName)}"`);
+      res.setHeader('Cache-Control', 'no-cache');
+      
+      // Handle stream errors
+      response.data.on('error', (streamError) => {
+        console.error('❌ Stream error:', streamError);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: 'Error streaming file'
+          });
+        }
+      });
       
       // Pipe the Cloudinary stream to response
       response.data.pipe(res);
       
-      console.log('✅ File download started');
-    } catch (error) {
-      console.error('❌ Download error:', error.message);
-      return res.status(500).json({
-        success: false,
-        message: 'Error downloading file. Please try again.'
-      });
+      console.log('✅ File streaming started');
+      
+    } catch (downloadError) {
+      console.error('❌ Download error:');
+      console.error('  - Message:', downloadError.message);
+      console.error('  - Status:', downloadError.response?.status);
+      console.error('  - Data:', downloadError.response?.data);
+      console.error('  - URL:', document.fileUrl);
+      
+      if (!res.headersSent) {
+        return res.status(500).json({
+          success: false,
+          message: `Error downloading file: ${downloadError.message}`
+        });
+      }
     }
   } catch (error) {
     console.error('❌ Download error:', error);
