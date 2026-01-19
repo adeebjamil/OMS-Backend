@@ -1,4 +1,6 @@
 const WorkLogService = require('../services/WorkLogService');
+const UserService = require('../services/UserService');
+const { createNotification } = require('./notificationController');
 
 // @desc    Get all work logs
 // @route   GET /api/worklogs
@@ -67,6 +69,28 @@ exports.createWorkLog = async (req, res, next) => {
     req.body.userId = req.user.id;
 
     const workLog = await WorkLogService.create(req.body);
+
+    // Create notification for admins when an employee submits a work log
+    try {
+      // Get all admins
+      const admins = await UserService.find({ role: 'admin', status: 'active' });
+      
+      for (const admin of admins) {
+        await createNotification({
+          userId: admin._id || admin.id,
+          type: 'worklog_submitted',
+          title: 'New Work Log Submitted',
+          message: `${req.user.name} has submitted a work log for ${new Date(workLog.date).toLocaleDateString()}`,
+          relatedId: workLog._id || workLog.id,
+          relatedModel: 'WorkLog',
+          link: '/dashboard/worklogs',
+          createdBy: req.user.id
+        });
+      }
+      console.log('✅ Work log submission notification created for admins');
+    } catch (notifError) {
+      console.error('❌ Error creating work log notification:', notifError);
+    }
 
     res.status(201).json({
       success: true,
@@ -168,6 +192,24 @@ exports.addFeedback = async (req, res, next) => {
     workLog.status = 'reviewed';
 
     const updated = await WorkLogService.save(workLog);
+
+    // Create notification for the employee that their work log has been reviewed
+    try {
+      const employeeId = workLog.userId?.id || workLog.userId;
+      await createNotification({
+        userId: employeeId,
+        type: 'worklog_reviewed',
+        title: 'Work Log Reviewed',
+        message: `Your work log for ${new Date(workLog.date).toLocaleDateString()} has been reviewed${req.body.rating ? ` with a rating of ${req.body.rating}/5` : ''}`,
+        relatedId: workLog._id || workLog.id,
+        relatedModel: 'WorkLog',
+        link: '/dashboard/worklogs',
+        createdBy: req.user.id
+      });
+      console.log('✅ Work log review notification created for employee');
+    } catch (notifError) {
+      console.error('❌ Error creating work log review notification:', notifError);
+    }
 
     res.status(200).json({
       success: true,

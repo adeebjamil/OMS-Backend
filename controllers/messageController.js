@@ -1,5 +1,6 @@
 const MessageService = require('../services/MessageService');
 const AnnouncementService = require('../services/AnnouncementService');
+const { createNotification } = require('./notificationController');
 
 // @desc    Get all messages
 // @route   GET /api/messages
@@ -57,6 +58,23 @@ exports.sendMessage = async (req, res, next) => {
     }
 
     const message = await MessageService.create(req.body);
+
+    // Create notification for the recipient
+    try {
+      await createNotification({
+        userId: req.body.recipient,
+        type: 'new_message',
+        title: 'New Message',
+        message: `${req.user.name} sent you a message: "${req.body.content?.substring(0, 50)}${req.body.content?.length > 50 ? '...' : ''}"`,
+        relatedId: message._id || message.id,
+        relatedModel: 'Message',
+        link: '/dashboard/messages',
+        createdBy: req.user.id
+      });
+      console.log('✅ Message notification created for recipient');
+    } catch (notifError) {
+      console.error('❌ Error creating message notification:', notifError);
+    }
 
     res.status(201).json({
       success: true,
