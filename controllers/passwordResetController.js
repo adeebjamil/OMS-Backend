@@ -24,7 +24,7 @@ exports.checkEmail = async (req, res, next) => {
     }
 
     // Find user by email
-    const user = await UserService.findOne({ email: email.toLowerCase() });
+    const user = await UserService.findByEmail(email.toLowerCase());
 
     if (!user) {
       return res.status(404).json({
@@ -63,7 +63,7 @@ exports.sendOTP = async (req, res, next) => {
     }
 
     // Find user by email
-    const user = await UserService.findOne({ email: email.toLowerCase() });
+    const user = await UserService.findByEmail(email.toLowerCase());
 
     if (!user) {
       return res.status(404).json({
@@ -209,7 +209,7 @@ exports.resetPassword = async (req, res, next) => {
     }
 
     // Find user and update password
-    const user = await UserService.findOne({ email: email.toLowerCase() });
+    const user = await UserService.findByEmail(email.toLowerCase());
 
     if (!user) {
       return res.status(404).json({
