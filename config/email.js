@@ -1,5 +1,10 @@
 const nodemailer = require('nodemailer');
 
+// Check if email credentials are configured
+if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+  console.log('⚠️ Email credentials not configured. Set EMAIL_USER and EMAIL_PASS environment variables.');
+}
+
 // Create transporter using Gmail SMTP
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -9,17 +14,24 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Verify transporter connection
-transporter.verify((error, success) => {
-  if (error) {
-    console.log('❌ Email transporter error:', error.message);
-  } else {
-    console.log('✅ Email server is ready to send messages');
-  }
-});
+// Verify transporter connection (only if credentials are set)
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  transporter.verify((error, success) => {
+    if (error) {
+      console.log('❌ Email transporter error:', error.message);
+    } else {
+      console.log('✅ Email server is ready to send messages');
+    }
+  });
+}
 
 // Send OTP email
 const sendOTPEmail = async (to, otp, userName) => {
+  // Check if email is configured
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    throw new Error('Email service not configured. Please contact administrator.');
+  }
+
   const mailOptions = {
     from: {
       name: 'Office Hub',
