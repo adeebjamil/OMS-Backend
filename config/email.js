@@ -1,5 +1,10 @@
 const nodemailer = require('nodemailer');
 
+// Debug: Log email config status at startup
+console.log('📧 Email Configuration:');
+console.log('   EMAIL_USER:', process.env.EMAIL_USER ? `${process.env.EMAIL_USER.substring(0, 5)}...` : 'NOT SET');
+console.log('   EMAIL_PASS:', process.env.EMAIL_PASS ? `SET (${process.env.EMAIL_PASS.length} chars)` : 'NOT SET');
+
 // Check if email credentials are configured
 if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
   console.log('⚠️ Email credentials not configured. Set EMAIL_USER and EMAIL_PASS environment variables.');
