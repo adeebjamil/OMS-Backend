@@ -52,11 +52,11 @@ class MessageService {
     try {
       let query = supabase.from(this.tableName).select(`
         *,
-        senderUser:sender_id (id, name, email, avatar),
-        recipientUser:recipient_id (id, name, email, avatar)
+        senderUser:sender_id (id, name, email, avatar, intern_id),
+        recipientUser:recipient_id (id, name, email, avatar, intern_id)
       `);
 
-      // Handle $or for sender/recipient
+      // Handle $or for sender/recipient (used for both employee view and admin filter)
       if (filters.$or) {
         const senderFilter = filters.$or.find(f => f.sender);
         const recipientFilter = filters.$or.find(f => f.recipient);
@@ -66,6 +66,7 @@ class MessageService {
           query = query.or(`sender_id.eq.${userId},recipient_id.eq.${userId}`);
         }
       }
+      // If no $or filter and admin, return all messages (no filter applied)
 
       if (filters.conversationId) {
         query = query.eq('conversation_id', filters.conversationId);
@@ -181,14 +182,18 @@ class MessageService {
         _id: data.senderUser.id,
         name: data.senderUser.name,
         email: data.senderUser.email,
-        avatar: data.senderUser.avatar
+        avatar: data.senderUser.avatar,
+        internId: data.senderUser.intern_id ? data.senderUser.intern_id.replace('INT', 'EMP') : null,
+        employeeId: data.senderUser.intern_id ? data.senderUser.intern_id.replace('INT', 'EMP') : null
       } : data.sender_id,
       recipient: withPopulate && data.recipientUser ? {
         id: data.recipientUser.id,
         _id: data.recipientUser.id,
         name: data.recipientUser.name,
         email: data.recipientUser.email,
-        avatar: data.recipientUser.avatar
+        avatar: data.recipientUser.avatar,
+        internId: data.recipientUser.intern_id ? data.recipientUser.intern_id.replace('INT', 'EMP') : null,
+        employeeId: data.recipientUser.intern_id ? data.recipientUser.intern_id.replace('INT', 'EMP') : null
       } : data.recipient_id,
       subject: data.subject,
       message: data.message,

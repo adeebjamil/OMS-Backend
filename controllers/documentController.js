@@ -10,7 +10,7 @@ exports.getDocuments = async (req, res, next) => {
   try {
     console.log('📄 GET /api/documents - User:', req.user?.email || 'Not authenticated');
     
-    const { category, isPublic } = req.query;
+    const { category, isPublic, uploadedBy } = req.query;
     let filters = {};
 
     if (req.user.role === 'intern') {
@@ -23,8 +23,13 @@ exports.getDocuments = async (req, res, next) => {
         { 'sharedWith.userId': req.user.id },
         { uploadedBy: req.user.id }
       ];
+    } else {
+      // Admin can see all documents
+      // Optional filter by uploader (employee)
+      if (uploadedBy) {
+        filters.uploadedBy = uploadedBy;
+      }
     }
-    // Admins can see all documents
 
     if (category) filters.category = category;
     if (isPublic !== undefined) filters.isPublic = isPublic === 'true';

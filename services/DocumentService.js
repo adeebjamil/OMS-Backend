@@ -51,7 +51,7 @@ class DocumentService {
     try {
       let query = supabase.from(this.tableName).select(`
         *,
-        uploadedByUser:uploaded_by (id, name, email)
+        uploadedByUser:uploaded_by (id, name, email, intern_id)
       `);
 
       if (filters.category) query = query.eq('category', filters.category);
@@ -68,7 +68,7 @@ class DocumentService {
         // Get all documents first
         const { data: allDocs } = await supabase.from(this.tableName).select(`
           *,
-          uploadedByUser:uploaded_by (id, name, email)
+          uploadedByUser:uploaded_by (id, name, email, intern_id)
         `);
         
         if (!allDocs) return [];
@@ -241,7 +241,9 @@ class DocumentService {
         id: data.uploadedByUser.id,
         _id: data.uploadedByUser.id,
         name: data.uploadedByUser.name,
-        email: data.uploadedByUser.email
+        email: data.uploadedByUser.email,
+        internId: data.uploadedByUser.intern_id ? data.uploadedByUser.intern_id.replace('INT', 'EMP') : null,
+        employeeId: data.uploadedByUser.intern_id ? data.uploadedByUser.intern_id.replace('INT', 'EMP') : null
       } : data.uploaded_by,
       sharedWith: sharedWith,
       isPublic: data.is_public,

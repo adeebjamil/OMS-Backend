@@ -6,13 +6,26 @@ const AnnouncementService = require('../services/AnnouncementService');
 // @access  Private
 exports.getMessages = async (req, res, next) => {
   try {
-    const { conversationId } = req.query;
-    const filters = {
-      $or: [
+    const { conversationId, employeeId } = req.query;
+    let filters = {};
+
+    if (req.user.role === 'admin') {
+      // Admin can see all messages
+      // Optional filter by employee
+      if (employeeId) {
+        filters.$or = [
+          { sender: employeeId },
+          { recipient: employeeId }
+        ];
+      }
+      // If no employeeId filter, admin sees all messages (no filter needed)
+    } else {
+      // Employees can only see their own messages
+      filters.$or = [
         { sender: req.user.id },
         { recipient: req.user.id }
-      ]
-    };
+      ];
+    }
 
     if (conversationId) {
       filters.conversationId = conversationId;
