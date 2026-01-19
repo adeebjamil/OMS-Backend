@@ -1,5 +1,5 @@
-const Message = require('../models/Message');
-const Announcement = require('../models/Announcement');
+const MessageService = require('../services/MessageService');
+const AnnouncementService = require('../services/AnnouncementService');
 
 // @desc    Get all messages
 // @route   GET /api/messages
@@ -7,7 +7,7 @@ const Announcement = require('../models/Announcement');
 exports.getMessages = async (req, res, next) => {
   try {
     const { conversationId } = req.query;
-    let query = {
+    const filters = {
       $or: [
         { sender: req.user.id },
         { recipient: req.user.id }
@@ -15,13 +15,10 @@ exports.getMessages = async (req, res, next) => {
     };
 
     if (conversationId) {
-      query.conversationId = conversationId;
+      filters.conversationId = conversationId;
     }
 
-    const messages = await Message.find(query)
-      .populate('sender', 'name email avatar')
-      .populate('recipient', 'name email avatar')
-      .sort({ createdAt: -1 });
+    const messages = await MessageService.find(filters);
 
     res.status(200).json({
       success: true,
@@ -46,7 +43,7 @@ exports.sendMessage = async (req, res, next) => {
       req.body.conversationId = `${ids[0]}_${ids[1]}`;
     }
 
-    const message = await Message.create(req.body);
+    const message = await MessageService.create(req.body);
 
     res.status(201).json({
       success: true,
@@ -62,7 +59,7 @@ exports.sendMessage = async (req, res, next) => {
 // @access  Private
 exports.markAsRead = async (req, res, next) => {
   try {
-    const message = await Message.findById(req.params.id);
+    const message = await MessageService.findById(req.params.id);
 
     if (!message) {
       return res.status(404).json({
@@ -71,7 +68,8 @@ exports.markAsRead = async (req, res, next) => {
       });
     }
 
-    if (message.recipient.toString() !== req.user.id) {
+    const recipientId = message.recipient?.id || message.recipient;
+    if (recipientId !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized'
@@ -79,12 +77,12 @@ exports.markAsRead = async (req, res, next) => {
     }
 
     message.isRead = true;
-    message.readAt = new Date();
-    await message.save();
+    message.readAt = new Date().toISOString();
+    const updated = await MessageService.save(message);
 
     res.status(200).json({
       success: true,
-      data: message
+      data: updated
     });
   } catch (error) {
     next(error);
@@ -96,35 +94,7 @@ exports.markAsRead = async (req, res, next) => {
 // @access  Private
 exports.getConversations = async (req, res, next) => {
   try {
-    const conversations = await Message.aggregate([
-      {
-        $match: {
-          $or: [
-            { sender: req.user._id },
-            { recipient: req.user._id }
-          ]
-        }
-      },
-      { $sort: { createdAt: -1 } },
-      {
-        $group: {
-          _id: '$conversationId',
-          lastMessage: { $first: '$$ROOT' },
-          unreadCount: {
-            $sum: {
-              $cond: [
-                { $and: [
-                  { $eq: ['$recipient', req.user._id] },
-                  { $eq: ['$isRead', false] }
-                ]},
-                1,
-                0
-              ]
-            }
-          }
-        }
-      }
-    ]);
+    const conversations = await MessageService.getConversations(req.user.id);
 
     res.status(200).json({
       success: true,
@@ -143,17 +113,15 @@ exports.getConversations = async (req, res, next) => {
 // @access  Private
 exports.getAnnouncements = async (req, res, next) => {
   try {
-    const query = {
+    const filters = {
       isActive: true,
       $or: [
         { targetAudience: 'all' },
-        { targetAudience: req.user.role === 'admin' ? 'admins' : 'employees' }
+        { targetAudience: req.user.role === 'admin' ? 'admins' : 'interns' }
       ]
     };
 
-    const announcements = await Announcement.find(query)
-      .populate('publishedBy', 'name email')
-      .sort({ createdAt: -1 });
+    const announcements = await AnnouncementService.find(filters);
 
     res.status(200).json({
       success: true,
@@ -172,7 +140,7 @@ exports.createAnnouncement = async (req, res, next) => {
   try {
     req.body.publishedBy = req.user.id;
 
-    const announcement = await Announcement.create(req.body);
+    const announcement = await AnnouncementService.create(req.body);
 
     res.status(201).json({
       success: true,
@@ -188,7 +156,7 @@ exports.createAnnouncement = async (req, res, next) => {
 // @access  Private
 exports.markAnnouncementAsRead = async (req, res, next) => {
   try {
-    const announcement = await Announcement.findById(req.params.id);
+    const announcement = await AnnouncementService.findById(req.params.id);
 
     if (!announcement) {
       return res.status(404).json({
@@ -198,13 +166,14 @@ exports.markAnnouncementAsRead = async (req, res, next) => {
     }
 
     // Check if already read
-    const alreadyRead = announcement.readBy.some(
-      item => item.userId.toString() === req.user.id
-    );
-
+    const alreadyRead = announcement.readBy?.some(r => r.userId === req.user.id);
+    
     if (!alreadyRead) {
-      announcement.readBy.push({ userId: req.user.id });
-      await announcement.save();
+      const updated = await AnnouncementService.markAsRead(req.params.id, req.user.id);
+      return res.status(200).json({
+        success: true,
+        data: updated
+      });
     }
 
     res.status(200).json({

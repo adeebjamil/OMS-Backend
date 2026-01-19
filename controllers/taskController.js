@@ -1,4 +1,4 @@
-const Task = require('../models/Task');
+const TaskService = require('../services/TaskService');
 const { createNotification } = require('./notificationController');
 
 // @desc    Get all tasks
@@ -7,22 +7,19 @@ const { createNotification } = require('./notificationController');
 exports.getTasks = async (req, res, next) => {
   try {
     const { status, priority, assignedTo } = req.query;
-    let query = {};
+    const filters = {};
 
     // If user is employee, only show tasks assigned to them
     if (req.user.role === 'intern') {
-      query.assignedTo = req.user.id;
+      filters.assignedTo = req.user.id;
     } else if (assignedTo) {
-      query.assignedTo = assignedTo;
+      filters.assignedTo = assignedTo;
     }
 
-    if (status) query.status = status;
-    if (priority) query.priority = priority;
+    if (status) filters.status = status;
+    if (priority) filters.priority = priority;
 
-    const tasks = await Task.find(query)
-      .populate('assignedTo', 'name email')
-      .populate('assignedBy', 'name email')
-      .sort({ createdAt: -1 });
+    const tasks = await TaskService.find(filters);
 
     res.status(200).json({
       success: true,
@@ -39,10 +36,7 @@ exports.getTasks = async (req, res, next) => {
 // @access  Private
 exports.getTask = async (req, res, next) => {
   try {
-    const task = await Task.findById(req.params.id)
-      .populate('assignedTo', 'name email')
-      .populate('assignedBy', 'name email')
-      .populate('comments.userId', 'name email');
+    const task = await TaskService.findById(req.params.id);
 
     if (!task) {
       return res.status(404).json({
@@ -67,23 +61,23 @@ exports.createTask = async (req, res, next) => {
   try {
     req.body.assignedBy = req.user.id;
 
-    const task = await Task.create(req.body);
+    const task = await TaskService.create(req.body);
     
-    // Populate to get full data for notification
-    await task.populate('assignedTo', 'name email');
+    // Get the full task with populated data
+    const fullTask = await TaskService.findById(task.id);
 
     // Create notification for assigned user
-    if (task.assignedTo && task.assignedTo._id) {
+    if (fullTask.assignedTo && fullTask.assignedTo.id) {
       try {
         await createNotification({
-          userId: task.assignedTo._id,
+          userId: fullTask.assignedTo.id,
           type: 'task_assigned',
           title: 'New Task Assigned',
-          message: `You have been assigned a new task: "${task.title}"`,
-          relatedId: task._id,
+          message: `You have been assigned a new task: "${fullTask.title}"`,
+          relatedId: fullTask.id,
           relatedModel: 'Task',
           link: `/dashboard/tasks`,
-          priority: task.priority === 'urgent' ? 'urgent' : task.priority === 'high' ? 'high' : 'normal',
+          priority: fullTask.priority === 'urgent' ? 'urgent' : fullTask.priority === 'high' ? 'high' : 'normal',
           createdBy: req.user.id
         });
         console.log('✅ Task assignment notification created');
@@ -94,7 +88,7 @@ exports.createTask = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      data: task
+      data: fullTask
     });
   } catch (error) {
     next(error);
@@ -106,7 +100,7 @@ exports.createTask = async (req, res, next) => {
 // @access  Private
 exports.updateTask = async (req, res, next) => {
   try {
-    let task = await Task.findById(req.params.id);
+    let task = await TaskService.findById(req.params.id);
 
     if (!task) {
       return res.status(404).json({
@@ -116,7 +110,8 @@ exports.updateTask = async (req, res, next) => {
     }
 
     // Only admin or assigned user can update
-    if (req.user.role !== 'admin' && task.assignedTo.toString() !== req.user.id) {
+    const assignedToId = task.assignedTo?.id || task.assignedTo;
+    if (req.user.role !== 'admin' && assignedToId !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to update this task'
@@ -125,20 +120,19 @@ exports.updateTask = async (req, res, next) => {
 
     const oldStatus = task.status;
     
-    task = await Task.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true
-    }).populate('assignedTo', 'name email').populate('assignedBy', 'name email');
+    task = await TaskService.findByIdAndUpdate(req.params.id, req.body);
 
     // Create notification if task status changed to completed
-    if (oldStatus !== 'completed' && task.status === 'completed' && task.assignedBy) {
+    const assignedById = task.assignedBy?.id || task.assignedBy;
+    if (oldStatus !== 'completed' && task.status === 'completed' && assignedById) {
       try {
+        const assignedToName = task.assignedTo?.name || 'User';
         await createNotification({
-          userId: task.assignedBy._id,
+          userId: assignedById,
           type: 'task_completed',
           title: 'Task Completed',
-          message: `${task.assignedTo.name} has completed the task: "${task.title}"`,
-          relatedId: task._id,
+          message: `${assignedToName} has completed the task: "${task.title}"`,
+          relatedId: task.id,
           relatedModel: 'Task',
           link: `/dashboard/tasks`,
           priority: 'normal',
@@ -164,7 +158,7 @@ exports.updateTask = async (req, res, next) => {
 // @access  Private/Admin
 exports.deleteTask = async (req, res, next) => {
   try {
-    const task = await Task.findByIdAndDelete(req.params.id);
+    const task = await TaskService.findByIdAndDelete(req.params.id);
 
     if (!task) {
       return res.status(404).json({
@@ -187,7 +181,7 @@ exports.deleteTask = async (req, res, next) => {
 // @access  Private
 exports.addComment = async (req, res, next) => {
   try {
-    const task = await Task.findById(req.params.id);
+    const task = await TaskService.findById(req.params.id);
 
     if (!task) {
       return res.status(404).json({
@@ -196,16 +190,11 @@ exports.addComment = async (req, res, next) => {
       });
     }
 
-    task.comments.push({
-      userId: req.user.id,
-      comment: req.body.comment
-    });
-
-    await task.save();
+    const updatedTask = await TaskService.addComment(req.params.id, req.user.id, req.body.comment);
 
     res.status(200).json({
       success: true,
-      data: task
+      data: updatedTask
     });
   } catch (error) {
     next(error);
@@ -218,20 +207,21 @@ exports.addComment = async (req, res, next) => {
 exports.getTaskStats = async (req, res, next) => {
   try {
     const userId = req.params.userId || req.user.id;
+    const filters = { assignedTo: userId };
 
-    const totalTasks = await Task.countDocuments({ assignedTo: userId });
-    const completedTasks = await Task.countDocuments({ assignedTo: userId, status: 'completed' });
-    const pendingTasks = await Task.countDocuments({ assignedTo: userId, status: 'pending' });
-    const inProgressTasks = await Task.countDocuments({ assignedTo: userId, status: 'in-progress' });
+    const total = await TaskService.countDocuments(filters);
+    const completed = await TaskService.countDocuments({ ...filters, status: 'completed' });
+    const pending = await TaskService.countDocuments({ ...filters, status: 'pending' });
+    const inProgress = await TaskService.countDocuments({ ...filters, status: 'in-progress' });
 
     res.status(200).json({
       success: true,
       data: {
-        totalTasks,
-        completedTasks,
-        pendingTasks,
-        inProgressTasks,
-        completionRate: totalTasks > 0 ? ((completedTasks / totalTasks) * 100).toFixed(2) : 0
+        total,
+        completed,
+        pending,
+        inProgress,
+        completionRate: total > 0 ? ((completed / total) * 100).toFixed(2) : 0
       }
     });
   } catch (error) {

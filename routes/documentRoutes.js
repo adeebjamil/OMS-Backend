@@ -10,15 +10,46 @@ const {
   sendToWhatsApp
 } = require('../controllers/documentController');
 const { protect, authorize } = require('../middleware/auth');
-const { upload } = require('../config/cloudinary');
+const multer = require('multer');
+
+// Configure multer for memory storage (for Supabase upload)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept common document formats
+    const allowedMimes = [
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'text/plain',
+      'text/csv'
+    ];
+    
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('File type not allowed'), false);
+    }
+  }
+});
 
 const router = express.Router();
 
 router.use(protect); // All routes require authentication
 
 router.put('/:id/download', incrementDownload);
-router.get('/:id/file', downloadDocument);  // Must be before /:id route
-router.post('/:id/send-whatsapp', sendToWhatsApp);  // Send document to WhatsApp
+router.get('/:id/file', downloadDocument);
+router.post('/:id/send-whatsapp', sendToWhatsApp);
 
 // Multer error handler middleware
 const handleMulterError = (err, req, res, next) => {
@@ -34,7 +65,8 @@ const handleMulterError = (err, req, res, next) => {
 
 router.route('/')
   .get(getDocuments)
-  .post(authorize('admin'), (req, res, next) => {
+  .post((req, res, next) => {
+    // Allow both admin and intern to upload documents
     upload.single('file')(req, res, (err) => {
       if (err) {
         console.error('❌ Upload middleware error:', err);
@@ -49,7 +81,7 @@ router.route('/')
 
 router.route('/:id')
   .get(getDocument)
-  .put(authorize('admin'), updateDocument)
-  .delete(authorize('admin'), deleteDocument);
+  .put(updateDocument)
+  .delete(deleteDocument);
 
 module.exports = router;

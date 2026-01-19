@@ -12,19 +12,20 @@ const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.use(protect); // All routes require authentication
-
-router.get('/stats/:userId', getTaskStats);
-router.get('/stats', getTaskStats);
-router.post('/:id/comments', addComment);
+router.use(protect);
 
 router.route('/')
   .get(getTasks)
   .post(authorize('admin'), createTask);
 
+router.get('/stats', getTaskStats);
+router.get('/stats/:userId', getTaskStats);
+
 router.route('/:id')
   .get(getTask)
   .put(updateTask)
   .delete(authorize('admin'), deleteTask);
+
+router.post('/:id/comments', addComment);
 
 module.exports = router;

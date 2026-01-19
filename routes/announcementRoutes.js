@@ -8,11 +8,12 @@ const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.use(protect); // All routes require authentication
+router.use(protect);
 
-router.put('/:id/read', markAnnouncementAsRead);
 router.route('/')
   .get(getAnnouncements)
   .post(authorize('admin'), createAnnouncement);
+
+router.put('/:id/read', markAnnouncementAsRead);
 
 module.exports = router;

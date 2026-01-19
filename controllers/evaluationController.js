@@ -1,4 +1,4 @@
-const Evaluation = require('../models/Evaluation');
+const EvaluationService = require('../services/EvaluationService');
 const { createNotification } = require('./notificationController');
 
 // @desc    Get all evaluations
@@ -7,23 +7,20 @@ const { createNotification } = require('./notificationController');
 exports.getEvaluations = async (req, res, next) => {
   try {
     const { internId, evaluationType, isPublished } = req.query;
-    let query = {};
+    const filters = {};
 
     // If user is employee, only show their own evaluations
     if (req.user.role === 'intern') {
-      query.internId = req.user.id;
-      query.isPublished = true;
+      filters.internId = req.user.id;
+      filters.isPublished = true;
     } else {
-      if (internId) query.internId = internId;
-      if (isPublished !== undefined) query.isPublished = isPublished;
+      if (internId) filters.internId = internId;
+      if (isPublished !== undefined) filters.isPublished = isPublished === 'true';
     }
 
-    if (evaluationType) query.evaluationType = evaluationType;
+    if (evaluationType) filters.evaluationType = evaluationType;
 
-    const evaluations = await Evaluation.find(query)
-      .populate('internId', 'name email')
-      .populate('evaluatedBy', 'name email')
-      .sort({ createdAt: -1 });
+    const evaluations = await EvaluationService.find(filters);
 
     res.status(200).json({
       success: true,
@@ -40,9 +37,7 @@ exports.getEvaluations = async (req, res, next) => {
 // @access  Private
 exports.getEvaluation = async (req, res, next) => {
   try {
-    const evaluation = await Evaluation.findById(req.params.id)
-      .populate('internId', 'name email')
-      .populate('evaluatedBy', 'name email');
+    const evaluation = await EvaluationService.findById(req.params.id);
 
     if (!evaluation) {
       return res.status(404).json({
@@ -67,20 +62,21 @@ exports.createEvaluation = async (req, res, next) => {
   try {
     req.body.evaluatedBy = req.user.id;
 
-    const evaluation = await Evaluation.create(req.body);
+    const evaluation = await EvaluationService.create(req.body);
     
-    // Populate to get employee details
-    await evaluation.populate('internId', 'name email');
+    // Get full evaluation with populated data
+    const fullEvaluation = await EvaluationService.findById(evaluation.id);
 
     // Create notification for the employee (only if published)
-    if (evaluation.isPublished && evaluation.internId && evaluation.internId._id) {
+    const internId = fullEvaluation.internId?.id || fullEvaluation.internId;
+    if (fullEvaluation.isPublished && internId) {
       try {
         await createNotification({
-          userId: evaluation.internId._id,
+          userId: internId,
           type: 'evaluation_created',
           title: 'New Evaluation Available',
-          message: `You have received a new ${evaluation.evaluationType} evaluation`,
-          relatedId: evaluation._id,
+          message: `You have received a new ${fullEvaluation.evaluationType} evaluation`,
+          relatedId: fullEvaluation.id,
           relatedModel: 'Evaluation',
           link: `/dashboard/evaluations`,
           priority: 'normal',
@@ -94,7 +90,7 @@ exports.createEvaluation = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      data: evaluation
+      data: fullEvaluation
     });
   } catch (error) {
     next(error);
@@ -106,14 +102,7 @@ exports.createEvaluation = async (req, res, next) => {
 // @access  Private/Admin
 exports.updateEvaluation = async (req, res, next) => {
   try {
-    const evaluation = await Evaluation.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      {
-        new: true,
-        runValidators: true
-      }
-    );
+    const evaluation = await EvaluationService.findByIdAndUpdate(req.params.id, req.body);
 
     if (!evaluation) {
       return res.status(404).json({
@@ -136,7 +125,7 @@ exports.updateEvaluation = async (req, res, next) => {
 // @access  Private/Admin
 exports.deleteEvaluation = async (req, res, next) => {
   try {
-    const evaluation = await Evaluation.findByIdAndDelete(req.params.id);
+    const evaluation = await EvaluationService.findByIdAndDelete(req.params.id);
 
     if (!evaluation) {
       return res.status(404).json({
@@ -159,7 +148,7 @@ exports.deleteEvaluation = async (req, res, next) => {
 // @access  Private/Admin
 exports.publishEvaluation = async (req, res, next) => {
   try {
-    const evaluation = await Evaluation.findById(req.params.id);
+    const evaluation = await EvaluationService.findById(req.params.id);
 
     if (!evaluation) {
       return res.status(404).json({
@@ -169,11 +158,31 @@ exports.publishEvaluation = async (req, res, next) => {
     }
 
     evaluation.isPublished = true;
-    await evaluation.save();
+    const updated = await EvaluationService.save(evaluation);
+
+    // Create notification
+    const internId = updated.internId?.id || updated.internId;
+    if (internId) {
+      try {
+        await createNotification({
+          userId: internId,
+          type: 'evaluation_created',
+          title: 'Evaluation Published',
+          message: `Your ${updated.evaluationType} evaluation has been published`,
+          relatedId: updated.id,
+          relatedModel: 'Evaluation',
+          link: `/dashboard/evaluations`,
+          priority: 'normal',
+          createdBy: req.user.id
+        });
+      } catch (notifError) {
+        console.error('❌ Error creating evaluation notification:', notifError);
+      }
+    }
 
     res.status(200).json({
       success: true,
-      data: evaluation
+      data: updated
     });
   } catch (error) {
     next(error);

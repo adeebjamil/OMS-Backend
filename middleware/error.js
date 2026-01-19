@@ -3,7 +3,13 @@ const errorHandler = (err, req, res, next) => {
   error.message = err.message;
 
   // Log to console for dev
-  console.error(err);
+  console.error('❌ Error:', err.message);
+
+  // Supabase Storage Error
+  if (err.__isStorageError) {
+    const message = err.message || 'Storage error';
+    error = { message, statusCode: 400 };
+  }
 
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {
@@ -24,10 +30,13 @@ const errorHandler = (err, req, res, next) => {
     error = { message, statusCode: 400 };
   }
 
-  res.status(error.statusCode || 500).json({
+  // Ensure statusCode is an integer
+  const statusCode = parseInt(error.statusCode, 10) || 500;
+
+  res.status(statusCode).json({
     success: false,
     message: error.message || 'Server Error',
-    ...(process.env.NODE_ENV === 'development' && { error: err })
+    ...(process.env.NODE_ENV === 'development' && { error: err.message })
   });
 };
 

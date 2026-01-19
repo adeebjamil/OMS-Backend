@@ -2,12 +2,11 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const connectDB = require('./config/db');
+const { supabase } = require('./config/supabase');
 const errorHandler = require('./middleware/error');
 
-// Import routes
+// Import Supabase routes
 const authRoutes = require('./routes/authRoutes');
-const passwordResetRoutes = require('./routes/passwordResetRoutes');
 const userRoutes = require('./routes/userRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const taskRoutes = require('./routes/taskRoutes');
@@ -22,8 +21,17 @@ const notificationRoutes = require('./routes/notificationRoutes');
 // Initialize express app
 const app = express();
 
-// Connect to MongoDB
-connectDB();
+// Test Supabase connection
+async function testSupabaseConnection() {
+  try {
+    const { data, error } = await supabase.from('users').select('count').limit(1);
+    if (error) throw error;
+    console.log('✅ Connected to Supabase PostgreSQL');
+  } catch (error) {
+    console.error('❌ Supabase connection error:', error.message);
+  }
+}
+testSupabaseConnection();
 
 // Middleware
 const allowedOrigins = [
@@ -52,7 +60,6 @@ app.use(cookieParser());
 
 // API Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/password-reset', passwordResetRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/tasks', taskRoutes);
@@ -68,7 +75,9 @@ app.use('/api/notifications', notificationRoutes);
 app.get('/', (req, res) => {
   res.json({
     message: '🎓 Office Management System API',
-    version: '1.0.0',
+    version: '2.0.0',
+    database: 'Supabase PostgreSQL',
+    storage: 'Supabase S3',
     status: 'Running',
     endpoints: {
       auth: '/api/auth',
@@ -80,7 +89,8 @@ app.get('/', (req, res) => {
       messages: '/api/messages',
       announcements: '/api/announcements',
       documents: '/api/documents',
-      dashboard: '/api/dashboard'
+      dashboard: '/api/dashboard',
+      notifications: '/api/notifications'
     }
   });
 });
@@ -93,4 +103,6 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`\n✅ Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
   console.log(`🚀 API available at http://localhost:${PORT}`);
+  console.log(`📦 Database: Supabase PostgreSQL`);
+  console.log(`🗄️  Storage: Supabase S3 Bucket`);
 });

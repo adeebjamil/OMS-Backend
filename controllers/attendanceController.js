@@ -1,5 +1,5 @@
-const Attendance = require('../models/Attendance');
-const User = require('../models/User');
+const AttendanceService = require('../services/AttendanceService');
+const UserService = require('../services/UserService');
 
 // @desc    Check in
 // @route   POST /api/attendance/checkin
@@ -10,7 +10,7 @@ exports.checkIn = async (req, res, next) => {
     today.setHours(0, 0, 0, 0);
 
     // Check if already checked in today
-    const existingAttendance = await Attendance.findOne({
+    const existingAttendance = await AttendanceService.findOne({
       userId: req.user.id,
       date: { $gte: today }
     });
@@ -22,10 +22,10 @@ exports.checkIn = async (req, res, next) => {
       });
     }
 
-    const attendance = await Attendance.create({
+    const attendance = await AttendanceService.create({
       userId: req.user.id,
-      date: new Date(),
-      checkIn: new Date(),
+      date: new Date().toISOString().split('T')[0],
+      checkIn: new Date().toISOString(),
       status: 'present'
     });
 
@@ -46,7 +46,7 @@ exports.checkOut = async (req, res, next) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const attendance = await Attendance.findOne({
+    const attendance = await AttendanceService.findOne({
       userId: req.user.id,
       date: { $gte: today },
       checkOut: null
@@ -59,12 +59,12 @@ exports.checkOut = async (req, res, next) => {
       });
     }
 
-    attendance.checkOut = new Date();
-    await attendance.save();
+    attendance.checkOut = new Date().toISOString();
+    const updated = await AttendanceService.save(attendance);
 
     res.status(200).json({
       success: true,
-      data: attendance
+      data: updated
     });
   } catch (error) {
     next(error);
@@ -77,29 +77,25 @@ exports.checkOut = async (req, res, next) => {
 exports.getAttendance = async (req, res, next) => {
   try {
     const { userId, startDate, endDate, status } = req.query;
-    let query = {};
+    const filters = {};
 
     // If user is intern, only show their own records
     if (req.user.role === 'intern') {
-      query.userId = req.user.id;
+      filters.userId = req.user.id;
     } else if (userId) {
-      query.userId = userId;
+      filters.userId = userId;
     }
 
     if (startDate && endDate) {
-      query.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
+      filters.startDate = startDate;
+      filters.endDate = endDate;
     }
 
     if (status) {
-      query.status = status;
+      filters.status = status;
     }
 
-    const attendance = await Attendance.find(query)
-      .populate('userId', 'name email')
-      .sort({ date: -1 });
+    const attendance = await AttendanceService.find(filters);
 
     res.status(200).json({
       success: true,
@@ -118,10 +114,10 @@ exports.requestLeave = async (req, res, next) => {
   try {
     const { date, leaveType, leaveReason } = req.body;
 
-    const attendance = await Attendance.create({
+    const attendance = await AttendanceService.create({
       userId: req.user.id,
       date,
-      checkIn: new Date(date),
+      checkIn: new Date(date).toISOString(),
       status: 'leave',
       leaveType,
       leaveReason,
@@ -144,7 +140,7 @@ exports.approveLeave = async (req, res, next) => {
   try {
     const { approved } = req.body;
 
-    const attendance = await Attendance.findById(req.params.id);
+    const attendance = await AttendanceService.findById(req.params.id);
 
     if (!attendance) {
       return res.status(404).json({
@@ -155,11 +151,11 @@ exports.approveLeave = async (req, res, next) => {
 
     attendance.leaveApproved = approved;
     attendance.approvedBy = req.user.id;
-    await attendance.save();
+    const updated = await AttendanceService.save(attendance);
 
     res.status(200).json({
       success: true,
-      data: attendance
+      data: updated
     });
   } catch (error) {
     next(error);
@@ -173,13 +169,12 @@ exports.getAttendanceStats = async (req, res, next) => {
   try {
     const userId = req.params.userId || req.user.id;
 
-    const totalDays = await Attendance.countDocuments({ userId });
-    const presentDays = await Attendance.countDocuments({ userId, status: 'present' });
-    const absentDays = await Attendance.countDocuments({ userId, status: 'absent' });
-    const leaveDays = await Attendance.countDocuments({ userId, status: 'leave' });
+    const totalDays = await AttendanceService.countDocuments({ userId });
+    const presentDays = await AttendanceService.countDocuments({ userId, status: 'present' });
+    const absentDays = await AttendanceService.countDocuments({ userId, status: 'absent' });
+    const leaveDays = await AttendanceService.countDocuments({ userId, status: 'leave' });
 
-    const attendanceRecords = await Attendance.find({ userId, totalHours: { $gt: 0 } });
-    const totalHours = attendanceRecords.reduce((sum, record) => sum + record.totalHours, 0);
+    const totalHours = await AttendanceService.sumTotalHours(userId);
     const avgHours = totalDays > 0 ? totalHours / totalDays : 0;
 
     res.status(200).json({

@@ -7,9 +7,9 @@ const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.use(protect); // All routes require authentication
+router.use(protect);
 
 router.get('/admin', authorize('admin'), getAdminDashboard);
-router.get('/intern', authorize('intern'), getInternDashboard);
+router.get('/intern', getInternDashboard);
 
 module.exports = router;

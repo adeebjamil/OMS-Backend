@@ -1,4 +1,4 @@
-const Notification = require('../models/Notification');
+const NotificationService = require('../services/NotificationService');
 
 // @desc    Get user notifications
 // @route   GET /api/notifications
@@ -6,24 +6,24 @@ const Notification = require('../models/Notification');
 exports.getNotifications = async (req, res, next) => {
   try {
     const { isRead, type, limit = 50, page = 1 } = req.query;
-    const query = { userId: req.user.id };
+    const filters = { userId: req.user.id };
 
     if (isRead !== undefined) {
-      query.isRead = isRead === 'true';
+      filters.isRead = isRead === 'true';
     }
 
     if (type) {
-      query.type = type;
+      filters.type = type;
     }
 
-    const notifications = await Notification.find(query)
-      .populate('createdBy', 'name avatar')
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit))
-      .skip((parseInt(page) - 1) * parseInt(limit));
+    const options = {
+      limit: parseInt(limit),
+      skip: (parseInt(page) - 1) * parseInt(limit)
+    };
 
-    const total = await Notification.countDocuments(query);
-    const unreadCount = await Notification.countDocuments({ 
+    const notifications = await NotificationService.find(filters, options);
+    const total = await NotificationService.countDocuments({ userId: req.user.id });
+    const unreadCount = await NotificationService.countDocuments({ 
       userId: req.user.id, 
       isRead: false 
     });
@@ -45,7 +45,7 @@ exports.getNotifications = async (req, res, next) => {
 // @access  Private
 exports.markAsRead = async (req, res, next) => {
   try {
-    const notification = await Notification.findOneAndUpdate(
+    const notification = await NotificationService.findOneAndUpdate(
       { _id: req.params.id, userId: req.user.id },
       { isRead: true },
       { new: true }
@@ -72,7 +72,7 @@ exports.markAsRead = async (req, res, next) => {
 // @access  Private
 exports.markAllAsRead = async (req, res, next) => {
   try {
-    await Notification.updateMany(
+    await NotificationService.updateMany(
       { userId: req.user.id, isRead: false },
       { isRead: true }
     );
@@ -91,7 +91,7 @@ exports.markAllAsRead = async (req, res, next) => {
 // @access  Private
 exports.deleteNotification = async (req, res, next) => {
   try {
-    const notification = await Notification.findOneAndDelete({
+    const notification = await NotificationService.findOneAndDelete({
       _id: req.params.id,
       userId: req.user.id
     });
@@ -116,7 +116,7 @@ exports.deleteNotification = async (req, res, next) => {
 // @access  Internal
 exports.createNotification = async (data) => {
   try {
-    const notification = await Notification.create(data);
+    const notification = await NotificationService.create(data);
     return notification;
   } catch (error) {
     console.error('Error creating notification:', error);
@@ -128,7 +128,7 @@ exports.createNotification = async (data) => {
 // @access  Internal
 exports.createBulkNotifications = async (notifications) => {
   try {
-    const result = await Notification.insertMany(notifications);
+    const result = await NotificationService.insertMany(notifications);
     return result;
   } catch (error) {
     console.error('Error creating bulk notifications:', error);

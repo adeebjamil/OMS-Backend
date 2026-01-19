@@ -1,4 +1,4 @@
-const WorkLog = require('../models/WorkLog');
+const WorkLogService = require('../services/WorkLogService');
 
 // @desc    Get all work logs
 // @route   GET /api/worklogs
@@ -6,29 +6,25 @@ const WorkLog = require('../models/WorkLog');
 exports.getWorkLogs = async (req, res, next) => {
   try {
     const { userId, startDate, endDate, status } = req.query;
-    let query = {};
+    const filters = {};
 
     // If user is employee, only show their own logs
     if (req.user.role === 'intern') {
-      query.userId = req.user.id;
+      filters.userId = req.user.id;
     } else if (userId) {
-      query.userId = userId;
+      filters.userId = userId;
     }
 
     if (startDate && endDate) {
-      query.date = {
+      filters.date = {
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
     }
 
-    if (status) query.status = status;
+    if (status) filters.status = status;
 
-    const workLogs = await WorkLog.find(query)
-      .populate('userId', 'name email')
-      .populate('tasksCompleted', 'title')
-      .populate('feedback.reviewedBy', 'name email')
-      .sort({ date: -1 });
+    const workLogs = await WorkLogService.find(filters);
 
     res.status(200).json({
       success: true,
@@ -45,10 +41,7 @@ exports.getWorkLogs = async (req, res, next) => {
 // @access  Private
 exports.getWorkLog = async (req, res, next) => {
   try {
-    const workLog = await WorkLog.findById(req.params.id)
-      .populate('userId', 'name email')
-      .populate('tasksCompleted')
-      .populate('feedback.reviewedBy', 'name email');
+    const workLog = await WorkLogService.findById(req.params.id);
 
     if (!workLog) {
       return res.status(404).json({
@@ -73,7 +66,7 @@ exports.createWorkLog = async (req, res, next) => {
   try {
     req.body.userId = req.user.id;
 
-    const workLog = await WorkLog.create(req.body);
+    const workLog = await WorkLogService.create(req.body);
 
     res.status(201).json({
       success: true,
@@ -89,7 +82,7 @@ exports.createWorkLog = async (req, res, next) => {
 // @access  Private
 exports.updateWorkLog = async (req, res, next) => {
   try {
-    let workLog = await WorkLog.findById(req.params.id);
+    let workLog = await WorkLogService.findById(req.params.id);
 
     if (!workLog) {
       return res.status(404).json({
@@ -99,17 +92,15 @@ exports.updateWorkLog = async (req, res, next) => {
     }
 
     // Only owner can update
-    if (workLog.userId.toString() !== req.user.id && req.user.role !== 'admin') {
+    const workLogUserId = workLog.userId?.id || workLog.userId;
+    if (workLogUserId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to update this work log'
       });
     }
 
-    workLog = await WorkLog.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true
-    });
+    workLog = await WorkLogService.findByIdAndUpdate(req.params.id, req.body);
 
     res.status(200).json({
       success: true,
@@ -125,7 +116,7 @@ exports.updateWorkLog = async (req, res, next) => {
 // @access  Private
 exports.deleteWorkLog = async (req, res, next) => {
   try {
-    const workLog = await WorkLog.findById(req.params.id);
+    const workLog = await WorkLogService.findById(req.params.id);
 
     if (!workLog) {
       return res.status(404).json({
@@ -135,14 +126,15 @@ exports.deleteWorkLog = async (req, res, next) => {
     }
 
     // Only owner can delete
-    if (workLog.userId.toString() !== req.user.id && req.user.role !== 'admin') {
+    const workLogUserId = workLog.userId?.id || workLog.userId;
+    if (workLogUserId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to delete this work log'
       });
     }
 
-    await workLog.deleteOne();
+    await WorkLogService.deleteOne({ id: req.params.id });
 
     res.status(200).json({
       success: true,
@@ -158,7 +150,7 @@ exports.deleteWorkLog = async (req, res, next) => {
 // @access  Private/Admin
 exports.addFeedback = async (req, res, next) => {
   try {
-    const workLog = await WorkLog.findById(req.params.id);
+    const workLog = await WorkLogService.findById(req.params.id);
 
     if (!workLog) {
       return res.status(404).json({
@@ -171,15 +163,15 @@ exports.addFeedback = async (req, res, next) => {
       reviewedBy: req.user.id,
       comment: req.body.comment,
       rating: req.body.rating,
-      reviewedAt: new Date()
+      reviewedAt: new Date().toISOString()
     };
     workLog.status = 'reviewed';
 
-    await workLog.save();
+    const updated = await WorkLogService.save(workLog);
 
     res.status(200).json({
       success: true,
-      data: workLog
+      data: updated
     });
   } catch (error) {
     next(error);

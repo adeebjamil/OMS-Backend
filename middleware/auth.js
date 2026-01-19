@@ -1,12 +1,12 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const UserService = require('../services/UserService');
 
 // Protect routes - verify JWT token
 exports.protect = async (req, res, next) => {
   let token;
 
   // Check for token in cookies, Authorization header, or query parameter
-  if (req.cookies.token) {
+  if (req.cookies && req.cookies.token) {
     token = req.cookies.token;
   } else if (
     req.headers.authorization &&
@@ -31,16 +31,26 @@ exports.protect = async (req, res, next) => {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Get user from token
-    req.user = await User.findById(decoded.id).select('-password');
+    // Get user from token using Supabase
+    const user = await UserService.findById(decoded.id);
 
-    if (!req.user) {
+    if (!user) {
       console.log('❌ User not found for token:', decoded.id);
       return res.status(401).json({
         success: false,
         message: 'User not found'
       });
     }
+
+    // Attach user to request object
+    req.user = {
+      id: user.id,
+      _id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      status: user.status
+    };
 
     console.log('✅ Authenticated:', req.user.email, '| Role:', req.user.role, '| Path:', req.path);
     next();

@@ -1,4 +1,4 @@
-const User = require('../models/User');
+const UserService = require('../services/UserService');
 
 // @desc    Register user
 // @route   POST /api/auth/register
@@ -8,7 +8,7 @@ exports.register = async (req, res, next) => {
     const { name, email, password, role, phone, college, department, internshipRole, startDate, endDate } = req.body;
 
     // Check if user exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await UserService.findByEmail(email);
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -17,9 +17,9 @@ exports.register = async (req, res, next) => {
     }
 
     // Create user
-    const user = await User.create({
+    const user = await UserService.create({
       name,
-      email,
+      email: email.toLowerCase(),
       password,
       role,
       phone,
@@ -55,8 +55,8 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    // Check for user
-    const user = await User.findOne({ email }).select('+password');
+    // Check for user (include password for verification)
+    const user = await UserService.findByEmail(email, true);
     
     console.log('👤 User found:', user ? `Yes (${user.email}, Status: ${user.status})` : 'No');
 
@@ -79,12 +79,10 @@ exports.login = async (req, res, next) => {
 
     // Check if password matches
     console.log('🔑 Checking password...');
-    console.log('Entered password length:', password.length);
-    console.log('Stored password hash:', user.password ? user.password.substring(0, 30) + '...' : 'NO HASH');
     
     let isMatch = false;
     try {
-      isMatch = await user.comparePassword(password);
+      isMatch = await UserService.comparePassword(password, user.password);
       console.log('🔑 Password match:', isMatch ? 'YES ✅' : 'NO ❌');
     } catch (compareError) {
       console.error('❌ Password comparison error:', compareError.message);
@@ -103,6 +101,9 @@ exports.login = async (req, res, next) => {
     }
 
     console.log('✅ Login successful for:', user.email);
+    
+    // Remove password before sending
+    delete user.password;
     sendTokenResponse(user, 200, res);
   } catch (error) {
     console.error('❌ Login error:', error.message);
@@ -115,7 +116,7 @@ exports.login = async (req, res, next) => {
 // @access  Private
 exports.getMe = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await UserService.findById(req.user.id);
 
     res.status(200).json({
       success: true,
@@ -141,10 +142,12 @@ exports.updateDetails = async (req, res, next) => {
       emergencyContact: req.body.emergencyContact
     };
 
-    const user = await User.findByIdAndUpdate(req.user.id, fieldsToUpdate, {
-      new: true,
-      runValidators: true
-    });
+    // Remove undefined fields
+    Object.keys(fieldsToUpdate).forEach(key => 
+      fieldsToUpdate[key] === undefined && delete fieldsToUpdate[key]
+    );
+
+    const user = await UserService.findByIdAndUpdate(req.user.id, fieldsToUpdate);
 
     res.status(200).json({
       success: true,
@@ -160,18 +163,21 @@ exports.updateDetails = async (req, res, next) => {
 // @access  Private
 exports.updatePassword = async (req, res, next) => {
   try {
-    const user = await User.findById(req.user.id).select('+password');
+    const user = await UserService.findById(req.user.id, true);
 
     // Check current password
-    if (!(await user.comparePassword(req.body.currentPassword))) {
+    const isMatch = await UserService.comparePassword(req.body.currentPassword, user.password);
+    if (!isMatch) {
       return res.status(401).json({
         success: false,
         message: 'Password is incorrect'
       });
     }
 
-    user.password = req.body.newPassword;
-    await user.save();
+    // Update password
+    await UserService.findByIdAndUpdate(req.user.id, {
+      password: req.body.newPassword
+    });
 
     sendTokenResponse(user, 200, res);
   } catch (error) {
@@ -183,30 +189,40 @@ exports.updatePassword = async (req, res, next) => {
 // @route   POST /api/auth/logout
 // @access  Private
 exports.logout = async (req, res, next) => {
-  res.cookie('token', 'none', {
-    expires: new Date(Date.now() + 10 * 1000),
-    httpOnly: true
-  });
+  try {
+    res.cookie('token', 'none', {
+      expires: new Date(Date.now() + 10 * 1000),
+      httpOnly: true
+    });
 
-  res.status(200).json({
-    success: true,
-    data: {}
-  });
+    res.status(200).json({
+      success: true,
+      data: {}
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 // Helper function to get token from model, create cookie and send response
 const sendTokenResponse = (user, statusCode, res) => {
   // Create token
-  const token = user.generateToken();
+  const token = UserService.generateToken(user);
 
   const options = {
     expires: new Date(
-      Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
+      Date.now() + (process.env.JWT_COOKIE_EXPIRE || 30) * 24 * 60 * 60 * 1000
     ),
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-    sameSite: 'strict'
+    httpOnly: true
   };
+
+  if (process.env.NODE_ENV === 'production') {
+    options.secure = true;
+  }
+
+  // Remove password from user object
+  const userData = { ...user };
+  delete userData.password;
 
   res
     .status(statusCode)
@@ -214,23 +230,6 @@ const sendTokenResponse = (user, statusCode, res) => {
     .json({
       success: true,
       token,
-      user: {
-        _id: user._id,
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        internId: user.internId,
-        avatar: user.avatar,
-        phone: user.phone,
-        college: user.college,
-        department: user.department,
-        internshipRole: user.internshipRole,
-        startDate: user.startDate,
-        endDate: user.endDate,
-        status: user.status,
-        address: user.address,
-        createdAt: user.createdAt
-      }
+      data: userData
     });
 };

@@ -11,9 +11,7 @@ const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.use(protect); // All routes require authentication
-
-router.put('/:id/publish', authorize('admin'), publishEvaluation);
+router.use(protect);
 
 router.route('/')
   .get(getEvaluations)
@@ -23,5 +21,7 @@ router.route('/:id')
   .get(getEvaluation)
   .put(authorize('admin'), updateEvaluation)
   .delete(authorize('admin'), deleteEvaluation);
+
+router.put('/:id/publish', authorize('admin'), publishEvaluation);
 
 module.exports = router;

@@ -1,8 +1,8 @@
-const User = require('../models/User');
-const Task = require('../models/Task');
-const Attendance = require('../models/Attendance');
-const WorkLog = require('../models/WorkLog');
-const Evaluation = require('../models/Evaluation');
+const UserService = require('../services/UserService');
+const TaskService = require('../services/TaskService');
+const AttendanceService = require('../services/AttendanceService');
+const WorkLogService = require('../services/WorkLogService');
+const EvaluationService = require('../services/EvaluationService');
 
 // @desc    Get admin dashboard statistics
 // @route   GET /api/dashboard/admin
@@ -10,78 +10,39 @@ const Evaluation = require('../models/Evaluation');
 exports.getAdminDashboard = async (req, res, next) => {
   try {
     // Total counts
-    const totalInterns = await User.countDocuments({ role: 'intern' });
-    const activeInterns = await User.countDocuments({ role: 'intern', status: 'active' });
-    const totalTasks = await Task.countDocuments();
-    const completedTasks = await Task.countDocuments({ status: 'completed' });
+    const totalInterns = await UserService.countDocuments({ role: 'intern' });
+    const activeInterns = await UserService.countDocuments({ role: 'intern', status: 'active' });
+    const totalTasks = await TaskService.countDocuments();
+    const completedTasks = await TaskService.countDocuments({ status: 'completed' });
 
     // Today's attendance
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayAttendance = await Attendance.countDocuments({
+    const todayAttendance = await AttendanceService.countDocuments({
       date: { $gte: today },
       status: 'present'
     });
 
     // Pending items
-    const pendingLeaves = await Attendance.countDocuments({
+    const pendingLeaves = await AttendanceService.countDocuments({
       status: 'leave',
       leaveApproved: null
     });
-    const pendingTasks = await Task.countDocuments({ status: 'pending' });
-    const pendingWorkLogs = await WorkLog.countDocuments({ status: 'submitted' });
+    const pendingTasks = await TaskService.countDocuments({ status: 'pending' });
+    const pendingWorkLogs = await WorkLogService.countDocuments({ status: 'submitted' });
 
     // Recent activities
-    const recentTasks = await Task.find()
-      .populate('assignedTo', 'name')
-      .populate('assignedBy', 'name')
-      .sort({ createdAt: -1 })
-      .limit(5);
-
-    const recentWorkLogs = await WorkLog.find()
-      .populate('userId', 'name')
-      .sort({ createdAt: -1 })
-      .limit(5);
+    const recentTasks = await TaskService.find({});
+    const recentWorkLogs = await WorkLogService.find({});
 
     // Task completion by intern (top 5)
-    const taskStats = await Task.aggregate([
-      {
-        $group: {
-          _id: '$assignedTo',
-          total: { $sum: 1 },
-          completed: {
-            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
-          }
-        }
-      },
-      { $sort: { completed: -1 } },
-      { $limit: 5 },
-      {
-        $lookup: {
-          from: 'users',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'intern'
-        }
-      },
-      { $unwind: '$intern' }
-    ]);
+    const taskStats = await TaskService.getStatsByUser();
 
     // Attendance statistics for the month
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const attendanceStats = await Attendance.aggregate([
-      {
-        $match: {
-          date: { $gte: startOfMonth }
-        }
-      },
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
+    const attendanceStats = await AttendanceService.aggregateByStatus({
+      date: { $gte: startOfMonth }
+    });
 
     res.status(200).json({
       success: true,
@@ -102,8 +63,8 @@ exports.getAdminDashboard = async (req, res, next) => {
           workLogs: pendingWorkLogs
         },
         recentActivities: {
-          tasks: recentTasks,
-          workLogs: recentWorkLogs
+          tasks: recentTasks.slice(0, 5),
+          workLogs: recentWorkLogs.slice(0, 5)
         },
         topPerformers: taskStats,
         monthlyAttendance: attendanceStats
@@ -122,23 +83,23 @@ exports.getInternDashboard = async (req, res, next) => {
     const userId = req.user.id;
 
     // Task statistics
-    const totalTasks = await Task.countDocuments({ assignedTo: userId });
-    const completedTasks = await Task.countDocuments({ 
+    const totalTasks = await TaskService.countDocuments({ assignedTo: userId });
+    const completedTasks = await TaskService.countDocuments({ 
       assignedTo: userId, 
       status: 'completed' 
     });
-    const pendingTasks = await Task.countDocuments({ 
+    const pendingTasks = await TaskService.countDocuments({ 
       assignedTo: userId, 
       status: 'pending' 
     });
-    const inProgressTasks = await Task.countDocuments({ 
+    const inProgressTasks = await TaskService.countDocuments({ 
       assignedTo: userId, 
       status: 'in-progress' 
     });
 
     // Attendance statistics
-    const totalDays = await Attendance.countDocuments({ userId });
-    const presentDays = await Attendance.countDocuments({ 
+    const totalDays = await AttendanceService.countDocuments({ userId });
+    const presentDays = await AttendanceService.countDocuments({ 
       userId, 
       status: 'present' 
     });
@@ -146,66 +107,39 @@ exports.getInternDashboard = async (req, res, next) => {
     // Today's attendance
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayAttendance = await Attendance.findOne({
+    const todayAttendance = await AttendanceService.findOne({
       userId,
       date: { $gte: today }
     });
 
     // Recent tasks
-    const recentTasks = await Task.find({ assignedTo: userId })
-      .populate('assignedBy', 'name')
-      .sort({ createdAt: -1 })
-      .limit(5);
+    const allTasks = await TaskService.find({ assignedTo: userId });
+    const recentTasks = allTasks.slice(0, 5);
 
     // Upcoming tasks (due soon)
-    const upcomingTasks = await Task.find({ 
-      assignedTo: userId,
-      status: { $in: ['pending', 'in-progress'] },
-      dueDate: { $gte: new Date() }
-    })
-      .sort({ dueDate: 1 })
-      .limit(5);
+    const upcomingTasks = allTasks
+      .filter(t => 
+        (t.status === 'pending' || t.status === 'in-progress') &&
+        new Date(t.dueDate) >= new Date()
+      )
+      .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+      .slice(0, 5);
 
     // Work log statistics
-    const totalWorkLogs = await WorkLog.countDocuments({ userId });
+    const totalWorkLogs = await WorkLogService.countDocuments({ userId });
     
     // Calculate total hours
-    const hoursAggregation = await WorkLog.aggregate([
-      {
-        $match: { 
-          userId: req.user._id
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          totalHours: { $sum: '$hoursWorked' }
-        }
-      }
-    ]);
+    const hoursAggregation = await WorkLogService.aggregateHours(userId);
+    const totalHours = hoursAggregation.length > 0 ? hoursAggregation[0].totalHours : 0;
     
-    const avgRating = await WorkLog.aggregate([
-      {
-        $match: { 
-          userId: req.user._id,
-          'feedback.rating': { $exists: true }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          avgRating: { $avg: '$feedback.rating' }
-        }
-      }
-    ]);
+    const avgRating = await WorkLogService.aggregateAvgRating(userId);
 
     // Latest evaluation
-    const latestEvaluation = await Evaluation.findOne({
+    const evaluations = await EvaluationService.find({
       internId: userId,
       isPublished: true
-    })
-      .populate('evaluatedBy', 'name')
-      .sort({ createdAt: -1 });
+    });
+    const latestEvaluation = evaluations.length > 0 ? evaluations[0] : null;
 
     res.status(200).json({
       success: true,
@@ -215,30 +149,31 @@ exports.getInternDashboard = async (req, res, next) => {
           completed: completedTasks,
           pending: pendingTasks,
           inProgress: inProgressTasks,
-          completionRate: totalTasks > 0 
-            ? ((completedTasks / totalTasks) * 100).toFixed(2)
-            : 0
+          completionRate: totalTasks > 0 ? ((completedTasks / totalTasks) * 100).toFixed(2) : 0
         },
         attendance: {
-          total: totalDays,
-          present: presentDays,
-          attendancePercentage: totalDays > 0 
-            ? ((presentDays / totalDays) * 100).toFixed(2)
-            : 0,
-          today: todayAttendance
+          totalDays,
+          presentDays,
+          attendancePercentage: totalDays > 0 ? ((presentDays / totalDays) * 100).toFixed(2) : 100,
+          today: todayAttendance ? {
+            checkIn: todayAttendance.checkIn,
+            checkOut: todayAttendance.checkOut,
+            totalHours: todayAttendance.totalHours || 0,
+            status: todayAttendance.status
+          } : null
         },
         workLogs: {
           total: totalWorkLogs,
-          totalHours: hoursAggregation.length > 0 
-            ? hoursAggregation[0].totalHours 
-            : 0,
-          averageRating: avgRating.length > 0 
-            ? avgRating[0].avgRating.toFixed(2)
-            : null
+          totalHours: totalHours.toFixed(2),
+          averageRating: avgRating.length > 0 ? avgRating[0].avgRating?.toFixed(1) : null
         },
         recentTasks,
         upcomingTasks,
-        latestEvaluation
+        latestEvaluation: latestEvaluation ? {
+          type: latestEvaluation.evaluationType,
+          overallRating: latestEvaluation.overallRating,
+          date: latestEvaluation.createdAt
+        } : null
       }
     });
   } catch (error) {
