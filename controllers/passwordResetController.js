@@ -94,10 +94,17 @@ exports.sendOTP = async (req, res, next) => {
         message: 'OTP has been sent to your email address'
       });
     } catch (emailError) {
-      console.error('❌ Failed to send OTP email:', emailError);
+      console.error('❌ Failed to send OTP email:', emailError.message);
+      console.error('❌ Full error:', emailError);
       
       // Clear the stored OTP since email failed
       otpStore.delete(email.toLowerCase());
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send OTP. Please try again later.',
+        error: process.env.NODE_ENV === 'development' ? emailError.message : undefined
+      });
       
       return res.status(500).json({
         success: false,
