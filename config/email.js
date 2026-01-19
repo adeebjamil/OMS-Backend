@@ -76,7 +76,7 @@ const sendOTPEmail = async (to, otp, userName) => {
     
     sendSmtpEmail.subject = 'Password Reset OTP - Office Hub';
     sendSmtpEmail.htmlContent = htmlContent;
-    sendSmtpEmail.sender = { name: 'Office Hub', email: 'noreply@officehub.com' };
+    sendSmtpEmail.sender = { name: 'Office Hub', email: process.env.EMAIL_USER || 'dbmongo6459@gmail.com' };
     sendSmtpEmail.to = [{ email: to, name: userName }];
 
     const result = await apiInstance.sendTransacEmail(sendSmtpEmail);
