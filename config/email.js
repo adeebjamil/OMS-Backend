@@ -10,13 +10,22 @@ if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
   console.log('⚠️ Email credentials not configured. Set EMAIL_USER and EMAIL_PASS environment variables.');
 }
 
-// Create transporter using Gmail SMTP
+// Create transporter using Gmail SMTP with explicit settings
+// Using port 587 with STARTTLS which works better on cloud platforms
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false, // Use STARTTLS
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS // Use App Password, not regular password
-  }
+    pass: process.env.EMAIL_PASS
+  },
+  tls: {
+    rejectUnauthorized: false // Allow self-signed certificates
+  },
+  connectionTimeout: 10000, // 10 seconds
+  greetingTimeout: 10000,
+  socketTimeout: 15000
 });
 
 // Verify transporter connection (only if credentials are set)
