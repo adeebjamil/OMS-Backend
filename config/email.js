@@ -1,23 +1,24 @@
-const { Resend } = require('resend');
+const SibApiV3Sdk = require('@getbrevo/brevo');
 
 // Debug: Log email config status at startup
 console.log('📧 Email Configuration:');
-console.log('   RESEND_API_KEY:', process.env.RESEND_API_KEY ? 'SET' : 'NOT SET');
+console.log('   BREVO_API_KEY:', process.env.BREVO_API_KEY ? 'SET' : 'NOT SET');
 
-// Check if Resend API key is configured
-if (!process.env.RESEND_API_KEY) {
-  console.log('⚠️ Resend API key not configured. Set RESEND_API_KEY environment variable.');
+// Check if Brevo API key is configured
+if (!process.env.BREVO_API_KEY) {
+  console.log('⚠️ Brevo API key not configured. Set BREVO_API_KEY environment variable.');
 } else {
-  console.log('✅ Email service (Resend) is ready');
+  console.log('✅ Email service (Brevo) is ready');
 }
 
-// Initialize Resend client
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Brevo client
+const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+apiInstance.setApiKey(SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY || '');
 
-// Send OTP email using Resend
+// Send OTP email using Brevo
 const sendOTPEmail = async (to, otp, userName) => {
-  // Check if Resend is configured
-  if (!process.env.RESEND_API_KEY) {
+  // Check if Brevo is configured
+  if (!process.env.BREVO_API_KEY) {
     throw new Error('Email service not configured. Please contact administrator.');
   }
 
@@ -71,20 +72,17 @@ const sendOTPEmail = async (to, otp, userName) => {
   `;
 
   try {
-    const { data, error } = await resend.emails.send({
-      from: 'Office Hub <onboarding@resend.dev>', // Free tier uses resend.dev domain
-      to: [to],
-      subject: 'Password Reset OTP - Office Hub',
-      html: htmlContent
-    });
+    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+    
+    sendSmtpEmail.subject = 'Password Reset OTP - Office Hub';
+    sendSmtpEmail.htmlContent = htmlContent;
+    sendSmtpEmail.sender = { name: 'Office Hub', email: 'noreply@officehub.com' };
+    sendSmtpEmail.to = [{ email: to, name: userName }];
 
-    if (error) {
-      console.error('❌ Resend error:', error);
-      throw new Error(error.message);
-    }
+    const result = await apiInstance.sendTransacEmail(sendSmtpEmail);
 
-    console.log('✅ OTP email sent via Resend:', data.id);
-    return { success: true, messageId: data.id };
+    console.log('✅ OTP email sent via Brevo:', result.messageId);
+    return { success: true, messageId: result.messageId };
   } catch (error) {
     console.error('❌ Failed to send OTP email:', error);
     throw error;
