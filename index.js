@@ -17,6 +17,7 @@ const announcementRoutes = require('./routes/announcementRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const passwordResetRoutes = require('./routes/passwordResetRoutes');
 
 // Initialize express app
 const app = express();
@@ -70,6 +71,7 @@ app.use('/api/announcements', announcementRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/password-reset', passwordResetRoutes);
 
 // Welcome route
 app.get('/', (req, res) => {
