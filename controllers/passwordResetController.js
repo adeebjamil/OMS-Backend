@@ -218,9 +218,8 @@ exports.resetPassword = async (req, res, next) => {
       });
     }
 
-    // Hash the new password and update
-    const hashedPassword = await UserService.hashPassword(newPassword);
-    await UserService.findByIdAndUpdate(user._id || user.id, { password: hashedPassword });
+    // Update password (findByIdAndUpdate will hash it automatically)
+    await UserService.findByIdAndUpdate(user._id || user.id, { password: newPassword });
 
     // Clear OTP data
     otpStore.delete(email.toLowerCase());
