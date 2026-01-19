@@ -31,6 +31,34 @@ class UserService {
     );
   }
 
+  // Generate employee ID based on start date and sequence
+  static async generateEmployeeId(startDate) {
+    try {
+      // Get year from start date (use last 2 digits)
+      const date = new Date(startDate);
+      const year = date.getFullYear().toString().slice(-2); // e.g., "25" for 2025
+      
+      // Count existing employees to get the next sequence number
+      const { count, error } = await supabase
+        .from(this.tableName)
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'intern');
+      
+      if (error) throw error;
+      
+      // Next sequence number (count + 1, padded to 4 digits)
+      const sequence = String((count || 0) + 1).padStart(4, '0');
+      
+      return `EMP${year}-${sequence}`;
+    } catch (error) {
+      console.error('Error generating employee ID:', error);
+      // Fallback: use timestamp-based ID
+      const year = new Date().getFullYear().toString().slice(-2);
+      const random = Math.floor(Math.random() * 9999).toString().padStart(4, '0');
+      return `EMP${year}-${random}`;
+    }
+  }
+
   // Create user
   static async create(userData) {
     try {
@@ -42,6 +70,11 @@ class UserService {
       // Clean phone
       if (userData.phone) {
         userData.phone = this.cleanPhone(userData.phone);
+      }
+
+      // Generate employee ID for interns based on start date
+      if (userData.role === 'intern' && userData.startDate) {
+        userData.internId = await this.generateEmployeeId(userData.startDate);
       }
 
       // Transform to snake_case for database
