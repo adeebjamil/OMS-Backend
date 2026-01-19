@@ -178,7 +178,28 @@ class EvaluationService {
     };
 
     for (const [key, value] of Object.entries(data)) {
-      if (key === '_id' || key === 'intern' || key === 'evaluator') continue;
+      // Skip internal fields and populated relations
+      if (key === '_id' || key === 'id' || key === 'intern' || key === 'evaluator') continue;
+      
+      // Handle internId - extract just the UUID if it's an object
+      if (key === 'internId' && value) {
+        if (typeof value === 'object') {
+          result.intern_id = value.id || value._id;
+        } else {
+          result.intern_id = value;
+        }
+        continue;
+      }
+      
+      // Handle evaluatedBy - extract just the UUID if it's an object
+      if (key === 'evaluatedBy' && value) {
+        if (typeof value === 'object') {
+          result.evaluated_by = value.id || value._id;
+        } else {
+          result.evaluated_by = value;
+        }
+        continue;
+      }
       
       // Handle nested period object
       if (key === 'period' && value) {

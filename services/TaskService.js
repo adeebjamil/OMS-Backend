@@ -253,7 +253,29 @@ class TaskService {
     };
 
     for (const [key, value] of Object.entries(data)) {
-      if (key === '_id') continue;
+      // Skip internal fields and populated relations
+      if (key === '_id' || key === 'id' || key === 'assignedToUser' || key === 'assignedByUser') continue;
+      
+      // Handle assignedTo - extract just the UUID if it's an object
+      if (key === 'assignedTo' && value) {
+        if (typeof value === 'object') {
+          result.assigned_to = value.id || value._id;
+        } else {
+          result.assigned_to = value;
+        }
+        continue;
+      }
+      
+      // Handle assignedBy - extract just the UUID if it's an object
+      if (key === 'assignedBy' && value) {
+        if (typeof value === 'object') {
+          result.assigned_by = value.id || value._id;
+        } else {
+          result.assigned_by = value;
+        }
+        continue;
+      }
+      
       if (keyMap[key]) {
         result[keyMap[key]] = value;
       } else {

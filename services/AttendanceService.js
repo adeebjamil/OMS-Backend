@@ -240,7 +240,29 @@ class AttendanceService {
     };
 
     for (const [key, value] of Object.entries(data)) {
+      // Skip internal fields and populated relations
       if (key === '_id' || key === 'id' || key === 'user' || key === 'approvedByUser') continue;
+      
+      // Handle userId - extract just the UUID if it's an object
+      if (key === 'userId' && value) {
+        if (typeof value === 'object') {
+          result.user_id = value.id || value._id;
+        } else {
+          result.user_id = value;
+        }
+        continue;
+      }
+      
+      // Handle approvedBy - extract just the UUID if it's an object
+      if (key === 'approvedBy' && value) {
+        if (typeof value === 'object') {
+          result.approved_by = value.id || value._id;
+        } else {
+          result.approved_by = value;
+        }
+        continue;
+      }
+      
       if (keyMap[key]) {
         result[keyMap[key]] = value;
       } else {

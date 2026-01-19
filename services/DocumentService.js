@@ -196,7 +196,19 @@ class DocumentService {
     };
 
     for (const [key, value] of Object.entries(data)) {
-      if (key === '_id' || key === 'uploadedByUser') continue;
+      // Skip internal fields and populated relations
+      if (key === '_id' || key === 'id' || key === 'uploadedByUser') continue;
+      
+      // Handle uploadedBy - extract just the UUID if it's an object
+      if (key === 'uploadedBy' && value) {
+        if (typeof value === 'object') {
+          result.uploaded_by = value.id || value._id;
+        } else {
+          result.uploaded_by = value;
+        }
+        continue;
+      }
+      
       if (keyMap[key]) {
         result[keyMap[key]] = value;
       } else {
