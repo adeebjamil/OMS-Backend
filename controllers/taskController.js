@@ -1,4 +1,5 @@
 const TaskService = require('../services/TaskService');
+const TeamService = require('../services/TeamService');
 const { createNotification } = require('./notificationController');
 
 // @desc    Get all tasks
@@ -61,19 +62,37 @@ exports.createTask = async (req, res, next) => {
   try {
     req.body.assignedBy = req.user.id;
 
+    // Handle team assignment
+    if (req.body.assignmentType === 'team' && req.body.assignedTeam) {
+      const team = await TeamService.findById(req.body.assignedTeam);
+      if (!team) {
+        return res.status(404).json({
+          success: false,
+          message: 'Team not found'
+        });
+      }
+      // Auto-assign task to the team leader
+      req.body.assignedTo = team.teamLeader;
+    }
+
     const task = await TaskService.create(req.body);
     
     // Get the full task with populated data
     const fullTask = await TaskService.findById(task.id);
 
-    // Create notification for assigned user
+    // Create notification for assigned user (team leader if team task)
     if (fullTask.assignedTo && fullTask.assignedTo.id) {
       try {
+        const notifMessage = fullTask.assignmentType === 'team' && fullTask.assignedTeam
+          ? `A new team task has been assigned to your team "${fullTask.assignedTeam.teamName}": "${fullTask.title}"`
+          : `You have been assigned a new task: "${fullTask.title}"`;
+        const notifTitle = fullTask.assignmentType === 'team' ? 'New Team Task Assigned' : 'New Task Assigned';
+
         await createNotification({
           userId: fullTask.assignedTo.id,
           type: 'task_assigned',
-          title: 'New Task Assigned',
-          message: `You have been assigned a new task: "${fullTask.title}"`,
+          title: notifTitle,
+          message: notifMessage,
           relatedId: fullTask.id,
           relatedModel: 'Task',
           link: `/dashboard/tasks`,
@@ -223,6 +242,129 @@ exports.getTaskStats = async (req, res, next) => {
         inProgress,
         completionRate: total > 0 ? ((completed / total) * 100).toFixed(2) : 0
       }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Delegate team task to team members
+// @route   POST /api/tasks/:id/delegate
+// @access  Private (Team Leader only)
+exports.delegateTask = async (req, res, next) => {
+  try {
+    const { memberIds } = req.body;
+    const parentTask = await TaskService.findById(req.params.id);
+
+    if (!parentTask) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+
+    // Verify this is a team task
+    if (parentTask.assignmentType !== 'team') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only team tasks can be delegated'
+      });
+    }
+
+    // Verify the current user is the team leader (assigned_to of this task)
+    const assignedToId = parentTask.assignedTo?.id || parentTask.assignedTo;
+    if (assignedToId !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the Team Leader can delegate this task'
+      });
+    }
+
+    if (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please select at least one team member'
+      });
+    }
+
+    // Verify all members are part of the team
+    const team = await TeamService.findById(parentTask.assignedTeam?.id || parentTask.assignedTeam);
+    if (!team) {
+      return res.status(404).json({
+        success: false,
+        message: 'Team not found'
+      });
+    }
+
+    const teamMemberIds = team.members || [];
+    const invalidMembers = memberIds.filter(id => !teamMemberIds.includes(id));
+    if (invalidMembers.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Some selected members are not part of this team'
+      });
+    }
+
+    // Create sub-tasks for each selected member
+    const subTasks = memberIds.map(memberId => ({
+      title: parentTask.title,
+      description: parentTask.description,
+      assignedTo: memberId,
+      assignedBy: parentTask.assignedBy?.id || parentTask.assignedBy,
+      assignedTeam: parentTask.assignedTeam?.id || parentTask.assignedTeam,
+      assignmentType: 'team',
+      parentTaskId: parentTask.id,
+      delegatedBy: req.user.id,
+      priority: parentTask.priority,
+      dueDate: parentTask.dueDate,
+      tags: parentTask.tags || [],
+    }));
+
+    const createdTasks = await TaskService.createMany(subTasks);
+
+    // Send notifications to each member
+    for (const memberId of memberIds) {
+      try {
+        await createNotification({
+          userId: memberId,
+          type: 'task_assigned',
+          title: 'New Task Delegated',
+          message: `Your Team Leader has delegated a task to you: "${parentTask.title}"`,
+          relatedId: parentTask.id,
+          relatedModel: 'Task',
+          link: `/dashboard/tasks`,
+          priority: parentTask.priority === 'urgent' ? 'urgent' : parentTask.priority === 'high' ? 'high' : 'normal',
+          createdBy: req.user.id
+        });
+      } catch (notifError) {
+        console.error('❌ Error creating delegation notification:', notifError);
+      }
+    }
+
+    // Fetch fully populated sub-tasks
+    const populatedSubTasks = await TaskService.findSubTasks(parentTask.id);
+
+    res.status(201).json({
+      success: true,
+      message: `Task delegated to ${memberIds.length} team member(s)`,
+      data: populatedSubTasks
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get sub-tasks for a parent task
+// @route   GET /api/tasks/:id/subtasks
+// @access  Private
+exports.getSubTasks = async (req, res, next) => {
+  try {
+    const subTasks = await TaskService.findSubTasks(req.params.id);
+
+    res.status(200).json({
+      success: true,
+      count: subTasks.length,
+      data: subTasks
     });
   } catch (error) {
     next(error);

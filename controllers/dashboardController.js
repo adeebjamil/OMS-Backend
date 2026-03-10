@@ -3,6 +3,7 @@ const TaskService = require('../services/TaskService');
 const AttendanceService = require('../services/AttendanceService');
 const WorkLogService = require('../services/WorkLogService');
 const EvaluationService = require('../services/EvaluationService');
+const TeamService = require('../services/TeamService');
 
 // @desc    Get admin dashboard statistics
 // @route   GET /api/dashboard/admin
@@ -141,6 +142,27 @@ exports.getInternDashboard = async (req, res, next) => {
     });
     const latestEvaluation = evaluations.length > 0 ? evaluations[0] : null;
 
+    // Team info
+    let teamInfo = null;
+    try {
+      const userTeams = await TeamService.findByUserId(userId);
+      if (userTeams && userTeams.length > 0) {
+        const team = userTeams[0]; // Primary team
+        teamInfo = {
+          id: team.id,
+          teamName: team.teamName,
+          description: team.description,
+          isLeader: team.isLeader,
+          leaderName: team.leaderDetails?.name || null,
+          leaderEmail: team.leaderDetails?.email || null,
+          leaderAvatar: team.leaderDetails?.avatar || null,
+          memberCount: team.members?.length || 0,
+        };
+      }
+    } catch (teamError) {
+      console.error('Error fetching team info for dashboard:', teamError);
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -173,7 +195,8 @@ exports.getInternDashboard = async (req, res, next) => {
           type: latestEvaluation.evaluationType,
           overallRating: latestEvaluation.overallRating,
           date: latestEvaluation.createdAt
-        } : null
+        } : null,
+        teamInfo
       }
     });
   } catch (error) {

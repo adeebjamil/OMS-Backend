@@ -28,7 +28,8 @@ class TaskService {
       let query = supabase.from(this.tableName).select(`
         *,
         assignedToUser:assigned_to (id, name, email),
-        assignedByUser:assigned_by (id, name, email)
+        assignedByUser:assigned_by (id, name, email),
+        assignedTeamData:assigned_team (id, team_name, team_leader, members, status)
       `);
 
       const { data, error } = await query.eq('id', id).single();
@@ -51,13 +52,18 @@ class TaskService {
       let query = supabase.from(this.tableName).select(`
         *,
         assignedToUser:assigned_to (id, name, email),
-        assignedByUser:assigned_by (id, name, email)
+        assignedByUser:assigned_by (id, name, email),
+        assignedTeamData:assigned_team (id, team_name, team_leader, members, status)
       `);
 
       if (filters.assignedTo) query = query.eq('assigned_to', filters.assignedTo);
       if (filters.assignedBy) query = query.eq('assigned_by', filters.assignedBy);
       if (filters.status) query = query.eq('status', filters.status);
       if (filters.priority) query = query.eq('priority', filters.priority);
+      if (filters.assignmentType) query = query.eq('assignment_type', filters.assignmentType);
+      if (filters.assignedTeam) query = query.eq('assigned_team', filters.assignedTeam);
+      if (filters.parentTaskId) query = query.eq('parent_task_id', filters.parentTaskId);
+      if (filters.excludeSubTasks) query = query.is('parent_task_id', null);
 
       const { data, error } = await query.order('created_at', { ascending: false });
 
@@ -91,7 +97,8 @@ class TaskService {
         query = query.select(`
           *,
           assignedToUser:assigned_to (id, name, email),
-          assignedByUser:assigned_by (id, name, email)
+          assignedByUser:assigned_by (id, name, email),
+          assignedTeamData:assigned_team (id, team_name, team_leader, members, status)
         `);
       }
 
@@ -141,6 +148,46 @@ class TaskService {
     }
   }
 
+  // Create multiple tasks (for delegation)
+  static async createMany(tasksArray) {
+    try {
+      const dbDataArray = tasksArray.map(t => this.toDbFormat(t));
+
+      const { data, error } = await supabase
+        .from(this.tableName)
+        .insert(dbDataArray)
+        .select();
+
+      if (error) throw error;
+      return data.map(t => this.toCamelCase(t));
+    } catch (error) {
+      console.error('TaskService.createMany error:', error);
+      throw error;
+    }
+  }
+
+  // Find sub-tasks by parent task ID
+  static async findSubTasks(parentTaskId) {
+    try {
+      const { data, error } = await supabase
+        .from(this.tableName)
+        .select(`
+          *,
+          assignedToUser:assigned_to (id, name, email),
+          assignedByUser:assigned_by (id, name, email),
+          assignedTeamData:assigned_team (id, team_name, team_leader, members, status)
+        `)
+        .eq('parent_task_id', parentTaskId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      return data.map(task => this.toCamelCase(task, true));
+    } catch (error) {
+      console.error('TaskService.findSubTasks error:', error);
+      throw error;
+    }
+  }
+
   // Add comment to task
   static async addComment(taskId, userId, comment) {
     try {
@@ -167,7 +214,8 @@ class TaskService {
         .select(`
           *,
           assignedToUser:assigned_to (id, name, email),
-          assignedByUser:assigned_by (id, name, email)
+          assignedByUser:assigned_by (id, name, email),
+          assignedTeamData:assigned_team (id, team_name, team_leader, members, status)
         `)
         .single();
 
@@ -204,6 +252,7 @@ class TaskService {
         .select(`
           assigned_to,
           status,
+          assignment_type,
           assignedToUser:assigned_to (id, name, email)
         `);
 
@@ -243,6 +292,10 @@ class TaskService {
     const keyMap = {
       assignedTo: 'assigned_to',
       assignedBy: 'assigned_by',
+      assignedTeam: 'assigned_team',
+      assignmentType: 'assignment_type',
+      parentTaskId: 'parent_task_id',
+      delegatedBy: 'delegated_by',
       dueDate: 'due_date',
       startDate: 'start_date',
       completedDate: 'completed_date',
@@ -254,7 +307,7 @@ class TaskService {
 
     for (const [key, value] of Object.entries(data)) {
       // Skip internal fields and populated relations
-      if (key === '_id' || key === 'id' || key === 'assignedToUser' || key === 'assignedByUser') continue;
+      if (key === '_id' || key === 'id' || key === 'assignedToUser' || key === 'assignedByUser' || key === 'assignedTeamData') continue;
       
       // Handle assignedTo - extract just the UUID if it's an object
       if (key === 'assignedTo' && value) {
@@ -307,6 +360,17 @@ class TaskService {
         name: data.assignedByUser.name,
         email: data.assignedByUser.email
       } : data.assigned_by,
+      assignedTeam: withPopulate && data.assignedTeamData ? {
+        id: data.assignedTeamData.id,
+        _id: data.assignedTeamData.id,
+        teamName: data.assignedTeamData.team_name,
+        teamLeader: data.assignedTeamData.team_leader,
+        members: data.assignedTeamData.members,
+        status: data.assignedTeamData.status
+      } : data.assigned_team,
+      assignmentType: data.assignment_type || 'individual',
+      parentTaskId: data.parent_task_id || null,
+      delegatedBy: data.delegated_by || null,
       priority: data.priority,
       status: data.status,
       dueDate: data.due_date,

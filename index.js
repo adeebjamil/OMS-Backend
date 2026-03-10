@@ -18,6 +18,7 @@ const documentRoutes = require('./routes/documentRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const passwordResetRoutes = require('./routes/passwordResetRoutes');
+const teamRoutes = require('./routes/teamRoutes');
 
 // Initialize express app
 const app = express();
@@ -72,6 +73,7 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/password-reset', passwordResetRoutes);
+app.use('/api/teams', teamRoutes);
 
 // Welcome route
 app.get('/', (req, res) => {
@@ -92,7 +94,8 @@ app.get('/', (req, res) => {
       announcements: '/api/announcements',
       documents: '/api/documents',
       dashboard: '/api/dashboard',
-      notifications: '/api/notifications'
+      notifications: '/api/notifications',
+      teams: '/api/teams'
     }
   });
 });

@@ -46,6 +46,10 @@ CREATE TABLE IF NOT EXISTS tasks (
     description TEXT NOT NULL,
     assigned_to UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     assigned_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    assigned_team UUID REFERENCES teams(id) ON DELETE SET NULL,
+    assignment_type VARCHAR(50) DEFAULT 'individual' CHECK (assignment_type IN ('individual', 'team')),
+    parent_task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
+    delegated_by UUID REFERENCES users(id) ON DELETE SET NULL,
     priority VARCHAR(50) DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
     status VARCHAR(50) DEFAULT 'pending' CHECK (status IN ('pending', 'in-progress', 'completed', 'cancelled')),
     due_date TIMESTAMPTZ NOT NULL,
@@ -66,6 +70,9 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS comments JSONB DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON tasks(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned_by ON tasks(assigned_by);
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned_team ON tasks(assigned_team);
+CREATE INDEX IF NOT EXISTS idx_tasks_assignment_type ON tasks(assignment_type);
+CREATE INDEX IF NOT EXISTS idx_tasks_parent_task ON tasks(parent_task_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 
 -- =====================================================
@@ -264,6 +271,25 @@ CREATE INDEX IF NOT EXISTS idx_announcements_active ON announcements(is_active);
 CREATE INDEX IF NOT EXISTS idx_announcements_created ON announcements(created_at DESC);
 
 -- =====================================================
+-- TEAMS TABLE
+-- =====================================================
+CREATE TABLE IF NOT EXISTS teams (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    team_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    team_leader UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    members UUID[] DEFAULT '{}',
+    status VARCHAR(50) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'archived')),
+    created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_teams_leader ON teams(team_leader);
+CREATE INDEX IF NOT EXISTS idx_teams_status ON teams(status);
+CREATE INDEX IF NOT EXISTS idx_teams_created ON teams(created_at DESC);
+
+-- =====================================================
 -- FUNCTIONS FOR AUTOMATIC UPDATED_AT
 -- =====================================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -326,6 +352,12 @@ CREATE TRIGGER update_worklogs_updated_at
 DROP TRIGGER IF EXISTS update_announcements_updated_at ON announcements;
 CREATE TRIGGER update_announcements_updated_at
     BEFORE UPDATE ON announcements
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_teams_updated_at ON teams;
+CREATE TRIGGER update_teams_updated_at
+    BEFORE UPDATE ON teams
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 

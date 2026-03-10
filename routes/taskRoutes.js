@@ -6,7 +6,9 @@ const {
   updateTask,
   deleteTask,
   addComment,
-  getTaskStats
+  getTaskStats,
+  delegateTask,
+  getSubTasks
 } = require('../controllers/taskController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -27,5 +29,7 @@ router.route('/:id')
   .delete(authorize('admin'), deleteTask);
 
 router.post('/:id/comments', addComment);
+router.post('/:id/delegate', delegateTask);
+router.get('/:id/subtasks', getSubTasks);
 
 module.exports = router;

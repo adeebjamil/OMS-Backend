@@ -77,9 +77,12 @@ exports.updateUser = async (req, res, next) => {
       });
     }
 
-    // Don't allow interns to change their role
-    if (req.user.role === 'intern' && req.body.role) {
+    // Don't allow interns to change their role, department, or employment role
+    if (req.user.role === 'intern') {
       delete req.body.role;
+      delete req.body.department;
+      delete req.body.internshipRole;
+      delete req.body.position;
     }
 
     const user = await UserService.findByIdAndUpdate(req.params.id, req.body);
