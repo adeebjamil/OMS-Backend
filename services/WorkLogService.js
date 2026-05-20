@@ -169,7 +169,12 @@ class WorkLogService {
         .select('hours_worked')
         .eq('user_id', userId);
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === '42703') {
+          return [{ _id: null, totalHours: 0 }];
+        }
+        throw error;
+      }
       
       const totalHours = data.reduce((sum, log) => sum + (log.hours_worked || 0), 0);
       return [{ _id: null, totalHours }];
